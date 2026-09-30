@@ -1,0 +1,28 @@
+{
+  "name": "catatku-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build:web": "npm --prefix ../web install && npm --prefix ../web run build",
+    "deploy": "npm run build:web && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "login-link": "node scripts/login-link.mjs",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@google/genai": "^2.24.0",
+    "@supabase/supabase-js": "^2.117.2",
+    "grammy": "^1.46.0",
+    "hono": "^4.13.10",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260928.1",
+    "@electric-sql/pglite": "^0.5.8",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2",
+    "wrangler": "^4.142.0"
+  }
+}

@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 60 11% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 161 94% 30%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 210 20% 94%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 62% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 90%;
+    --input: 214 20% 86%;
+    --ring: 161 94% 30%;
+    --radius: 0.75rem;
+    /* Money semantics (text ink, paired with +/− signs so colour is never the only cue) */
+    --income: 120 100% 19%;
+    --expense: 0 62% 45%;
+
+    /* Chart tokens (dataviz reference palette) */
+    --chart-series-1: #2a78d6;
+    --chart-reference: #898781;
+    --chart-grid: #e1e0d9;
+    --chart-axis: #898781;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #d03b3b;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --background: 0 0% 5%;
+      --foreground: 40 10% 96%;
+      --card: 60 3% 10%;
+      --card-foreground: 40 10% 96%;
+      --primary: 158 64% 45%;
+      --primary-foreground: 0 0% 4%;
+      --secondary: 60 3% 15%;
+      --secondary-foreground: 40 10% 96%;
+      --muted: 60 3% 15%;
+      --muted-foreground: 50 8% 70%;
+      --accent: 60 3% 17%;
+      --accent-foreground: 40 10% 96%;
+      --destructive: 0 70% 58%;
+      --destructive-foreground: 0 0% 100%;
+      --border: 60 2% 20%;
+      --input: 60 2% 24%;
+      --ring: 158 64% 45%;
+      --income: 120 86% 34%;
+      --expense: 0 72% 66%;
+
+      --chart-series-1: #3987e5;
+      --chart-reference: #898781;
+      --chart-grid: #2c2c2a;
+      --chart-axis: #898781;
+    }
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Must match the Worker name you pick in the Cloudflare dashboard.
+  "name": "catatku",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The Next.js dashboard is exported as static files and served by this same Worker,
+  // so the API and the dashboard share one origin (no CORS, simple cookies).
+  "assets": {
+    "directory": "../web/out",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*", "/auth/*", "/telegram/*", "/setup", "/setup/*"]
+  },
+
+  // Reminder dispatcher — runs every minute (free plan allows this).
+  "triggers": { "crons": ["* * * * *"] },
+
+  // Non-secret settings. Secrets (keys, tokens, ALLOWED_TELEGRAM_IDS) are added in the Cloudflare
+  // dashboard: Workers & Pages → catatku → Settings → Variables and Secrets. See README.
+  "vars": {
+    "GEMINI_MODEL": "gemini-flash-latest",
+    // Less thinking = faster replies. MINIMAL | LOW | MEDIUM | HIGH, or "" for the model default.
+    "GEMINI_THINKING_LEVEL": "LOW",
+    "DEFAULT_TIMEZONE": "Asia/Jakarta",
+    "DEFAULT_CURRENCY": "IDR",
+    // Public base URL of this Worker. Empty = use the request's own origin (https://catatku.<you>.workers.dev).
+    "PUBLIC_URL": ""
+  },
+
+  // Keep variables added in the dashboard when Cloudflare redeploys from GitHub.
+  "keep_vars": true,
+
+  "observability": { "enabled": true }
+}
