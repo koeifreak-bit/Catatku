@@ -30,8 +30,11 @@ auth.get("/login", (c) => {
 auth.post("/login", async (c) => {
   // Login CSRF guard: only accept the form from our own confirmation page, so another site can't
   // silently log the visitor into someone else's account.
+  // Browsers send `Origin: null` here (the page uses Referrer-Policy: no-referrer), so trust Sec-Fetch-Site first.
+  const site = c.req.header("Sec-Fetch-Site");
   const origin = c.req.header("Origin");
-  if (origin && origin !== new URL(c.req.url).origin) {
+  const sameSite = site ? site === "same-origin" || site === "none" : !origin || origin === "null" || origin === new URL(c.req.url).origin;
+  if (!sameSite) {
     return c.html(page("Catatku", `<h1>Link tidak valid</h1><p>Buka link dari bot Telegram-mu secara langsung.</p>`), 403);
   }
   const form = await c.req.parseBody();
