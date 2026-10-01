@@ -58,8 +58,13 @@ export default function RemindersPage() {
   }
 
   async function cancel(id: number) {
-    await api.cancelReminder(id);
-    await mutate();
+    setError(null);
+    try {
+      await api.cancelReminder(id);
+      await mutate();
+    } catch (err) {
+      setError(`Gagal membatalkan: ${(err as Error).message}`);
+    }
   }
 
   return (

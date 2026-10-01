@@ -8,6 +8,7 @@ import { createLoginToken } from "../lib/auth";
 import type { CategoryRow, DB, TransactionRow, TxSource, UserRow } from "../lib/db";
 import { aiNowContext, formatLocal, isZoneName, parseAiDateTime, safeTz, toLocal } from "../lib/dates";
 import { correctUnitError, formatMoney, parseAmount } from "../lib/money";
+import { APPROVED_MESSAGE, approveUser, blockUser, getAllowedUser } from "../services/access";
 import { type MessageAnalysis, analyzeMessage, analyzeVoice, answerQuestion, parseReceipt } from "../services/ai";
 import {
   cancelReminder,
@@ -50,14 +51,20 @@ export interface ActionResult {
   toast: string;
   /** HTML appended to the original message when it is edited. */
   appendHtml?: string;
-  /** Remove the buttons from the original message. */
+  /** Remove the tapped button from the original message (other buttons stay, e.g. the remaining 🗑 buttons). */
   clearButtons?: boolean;
+  /** Remove every button from the original message (e.g. Izinkan/Tolak once a decision is made). */
+  removeAllButtons?: boolean;
+  /** Extra message to send to another Telegram user (e.g. "you've been approved"). */
+  notify?: { telegramId: number; html: string };
 }
 
 export interface AssistantContext {
   env: Env;
   db: DB;
   user: UserRow;
+  /** Owner = ID listed in ALLOWED_TELEGRAM_IDS; can approve other people. */
+  isOwner: boolean;
 }
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -386,6 +393,33 @@ export async function handleAction(ctx: AssistantContext, data: string): Promise
   const { db, user } = ctx;
   const [action, rawId] = data.split(":");
   const id = Number(rawId);
+
+  // Access requests (buttons sent to owners): allow:<telegramId> / deny:<telegramId>
+  if ((action === "allow" || action === "deny") && Number.isSafeInteger(id) && id > 0) {
+    if (!ctx.isOwner) return { toast: "⛔ Hanya pemilik bot yang bisa melakukan ini" };
+    const person = await getAllowedUser(db, id);
+    const label = esc(person?.name || (person?.username ? `@${person.username}` : `ID ${id}`));
+    // Already decided (e.g. by another owner, or by the other button): don't silently flip it from Telegram.
+    if (person && person.status !== "pending") {
+      const was = person.status === "approved" ? "sudah diizinkan" : "sudah ditolak";
+      return {
+        toast: `${person.name || id} ${was}. Ubah lewat dashboard → Pengguna.`,
+        appendHtml: `ℹ️ ${label} ${was}.`,
+        removeAllButtons: true,
+      };
+    }
+    if (action === "allow") {
+      await approveUser(db, id, user.telegram_id);
+      return {
+        toast: `✅ ${person?.name || id} diizinkan`,
+        appendHtml: `✅ <b>Diizinkan</b> oleh ${esc(user.first_name || "pemilik")}.`,
+        removeAllButtons: true,
+        notify: { telegramId: id, html: APPROVED_MESSAGE },
+      };
+    }
+    await blockUser(db, id, user.telegram_id);
+    return { toast: `🚫 ${person?.name || id} ditolak`, appendHtml: `🚫 <b>Ditolak.</b> ${label} tidak bisa memakai bot.`, removeAllButtons: true };
+  }
 
   if (action === "del" && id) {
     const ok = await deleteTransaction(db, user.id, id);

@@ -8,10 +8,10 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 
-const MIGRATION: string = readFileSync(
-  fileURLToPath(new URL("../../supabase/migrations/20260928000000_init.sql", import.meta.url).href),
-  "utf8",
-);
+const migration = (name: string): string =>
+  readFileSync(fileURLToPath(new URL(`../../supabase/migrations/${name}`, import.meta.url).href), "utf8");
+// Every migration, in order (this is what you paste into Supabase).
+const MIGRATION = ["20260928000000_init.sql", "20261001000000_allowed_users.sql"].map(migration).join("\n");
 
 let db: PGlite;
 let uid: number;
@@ -70,6 +70,21 @@ describe("schema", () => {
   it("rejects duplicate custom categories for the same user", async () => {
     await db.query(`insert into categories (user_id, name, type) values ($1, 'Kopi', 'expense')`, [uid]);
     await expect(db.query(`insert into categories (user_id, name, type) values ($1, 'Kopi', 'expense')`, [uid])).rejects.toThrow();
+  });
+});
+
+describe("people list", () => {
+  it("stores access requests and approvals", async () => {
+    await db.query(`insert into allowed_users (telegram_id, name, status, requested_at) values (222, 'Budi', 'pending', now())`);
+    // a second request from the same person must not create a duplicate
+    await db.query(`insert into allowed_users (telegram_id, status) values (222, 'pending') on conflict (telegram_id) do nothing`);
+    expect((await one<{ n: number }>(`select count(*)::int n from allowed_users where telegram_id = 222`)).n).toBe(1);
+    await db.query(`update allowed_users set status = 'approved', added_by = 111, decided_at = now() where telegram_id = 222`);
+    expect((await one<{ status: string }>(`select status from allowed_users where telegram_id = 222`)).status).toBe("approved");
+  });
+
+  it("rejects unknown statuses", async () => {
+    await expect(db.query(`insert into allowed_users (telegram_id, status) values (333, 'admin')`)).rejects.toThrow();
   });
 });
 

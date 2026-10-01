@@ -11,6 +11,38 @@ export interface User {
   timezone: string;
   monthly_budget: number;
   initial_balance: number;
+  /** Listed in ALLOWED_TELEGRAM_IDS: can approve other people. */
+  is_owner: boolean;
+  /** No owners configured: anyone can use the bot. */
+  open_mode: boolean;
+}
+
+export type PersonStatus = "pending" | "approved" | "blocked";
+
+export interface Person {
+  telegram_id: number;
+  name: string | null;
+  username: string | null;
+  status: PersonStatus;
+  requested_at: string | null;
+  decided_at: string | null;
+  created_at: string;
+  /** When they first used the bot; null = not started yet. */
+  started_at: string | null;
+}
+
+export interface Owner {
+  telegram_id: number;
+  name: string | null;
+  username: string | null;
+  started_at: string | null;
+  is_me: boolean;
+}
+
+export interface PeopleResponse {
+  open_mode: boolean;
+  owners: Owner[];
+  people: Person[];
 }
 
 export interface Category {

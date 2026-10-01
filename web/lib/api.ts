@@ -63,6 +63,7 @@ export const paths = {
   transactions: (f: TransactionFilters) => `/api/transactions${toQuery({ ...f })}`,
   categories: "/api/categories",
   reminders: (status: "active" | "all" = "active") => `/api/reminders${toQuery({ status: status === "all" ? "all" : undefined })}`,
+  people: "/api/admin/users",
 };
 
 export const api = {
@@ -77,7 +78,7 @@ export const api = {
 
   transactions: (f: TransactionFilters) => request<Paginated<Transaction>>(paths.transactions(f)),
   exportTransactions: (f: TransactionFilters) =>
-    request<{ items: Transaction[]; currency: string; timezone: string }>(
+    request<{ items: Transaction[]; currency: string; timezone: string; truncated?: boolean }>(
       `/api/transactions/export${toQuery({ ...f, page: undefined, page_size: undefined })}`,
     ),
   createTransaction: (input: TransactionInput) =>
@@ -95,4 +96,10 @@ export const api = {
   createReminder: (input: { task: string; remind_at: string; recurrence: Recurrence; amount: number | null }) =>
     request<Reminder>("/api/reminders", { method: "POST", body: JSON.stringify(input) }),
   cancelReminder: (id: number) => request<void>(`/api/reminders/${id}`, { method: "DELETE" }),
+
+  addPerson: (telegram_id: number, name?: string) =>
+    request<{ ok: true; notified: boolean }>("/api/admin/users", { method: "POST", body: JSON.stringify({ telegram_id, name }) }),
+  setPersonStatus: (telegramId: number, status: "approved" | "blocked") =>
+    request<{ ok: true; notified?: boolean }>(`/api/admin/users/${telegramId}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  removePerson: (telegramId: number) => request<void>(`/api/admin/users/${telegramId}`, { method: "DELETE" }),
 };

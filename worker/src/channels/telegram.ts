@@ -12,9 +12,10 @@ import {
   handleVoice,
 } from "../core/assistant";
 import { esc } from "../core/format";
-import { type Env, allowedTelegramIds } from "../env";
+import { type Env, ownerTelegramIds } from "../env";
 import { getDb } from "../lib/db";
 import { AIError } from "../services/ai";
+import { accessFor, canUse, requestAccess } from "../services/access";
 import { upsertTelegramUser } from "../services/finance";
 
 type BotContext = Context & { assistant: AssistantContext };
@@ -62,10 +63,27 @@ async function downloadFile(ctx: BotContext, token: string, fileId: string): Pro
   return new Uint8Array(await res.arrayBuffer());
 }
 
+/** Tell every owner that someone new wants to use the bot, with Allow / Decline buttons. */
+async function notifyOwners(env: Env, ctx: BotContext, who: { id: number; name: string | null; username: string | null }) {
+  const lines = [
+    "👤 <b>Permintaan akses baru</b>",
+    "",
+    `Nama: <b>${esc(who.name || "(tanpa nama)")}</b>`,
+    ...(who.username ? [`Username: @${esc(who.username)}`] : []),
+    `ID: <code>${who.id}</code>`,
+    "",
+    "Izinkan dia memakai Catatku? Datanya akan terpisah dari datamu.",
+  ];
+  const kb = new InlineKeyboard().text("✅ Izinkan", `allow:${who.id}`).text("🚫 Tolak", `deny:${who.id}`);
+  for (const owner of ownerTelegramIds(env)) {
+    // An owner who has never opened the bot can't be messaged; the request still shows on the dashboard.
+    await ctx.api.sendMessage(owner, lines.join("\n"), { parse_mode: "HTML", reply_markup: kb }).catch(() => undefined);
+  }
+}
+
 function buildBot(env: Env): Bot<BotContext> {
   const token = env.TELEGRAM_BOT_TOKEN;
   const bot = new Bot<BotContext>(token);
-  const allowed = allowedTelegramIds(env);
 
   // Error boundary. In webhook mode grammY never calls bot.catch() (handleUpdate just rethrows),
   // so failures are caught here and the user always gets a reply instead of silence.
@@ -86,18 +104,32 @@ function buildBot(env: Env): Bot<BotContext> {
     const from = ctx.from;
     if (!from || from.is_bot) return;
     if (ctx.chat && ctx.chat.type !== "private") return;
-    if (allowed.size && !allowed.has(from.id)) {
-      if (ctx.message) await ctx.reply(`⛔ Bot ini privat. ID Telegram kamu: ${from.id}`);
+    const db = getDb(env);
+    const access = await accessFor(env, db, from.id);
+    if (!canUse(access)) {
+      if (ctx.callbackQuery) await ctx.answerCallbackQuery({ text: "⛔ Akses belum diizinkan" }).catch(() => undefined);
+      if (!ctx.message) return;
+      if (access === "blocked") {
+        await ctx.reply("⛔ Bot ini privat.");
+      } else if (access === "pending") {
+        await ctx.reply("⏳ Permintaan aksesmu masih menunggu persetujuan pemilik bot. Kamu akan dapat pesan begitu disetujui.");
+      } else {
+        const name = [from.first_name, from.last_name].filter(Boolean).join(" ") || null;
+        const isNew = await requestAccess(db, { telegramId: from.id, name, username: from.username ?? null });
+        if (isNew) await notifyOwners(env, ctx, { id: from.id, name, username: from.username ?? null });
+        await ctx.reply(
+          `👋 Halo! Bot ini privat.\nPermintaan akses sudah dikirim ke pemiliknya. Kamu akan dapat pesan begitu disetujui.\n\nID Telegram kamu: ${from.id}`,
+        );
+      }
       return;
     }
-    const db = getDb(env);
     const user = await upsertTelegramUser(db, env, {
       telegramId: from.id,
       chatId: ctx.chat?.id ?? from.id,
       username: from.username ?? null,
       firstName: from.first_name ?? null,
     });
-    ctx.assistant = { env, db, user };
+    ctx.assistant = { env, db, user, isOwner: access === "owner" };
     await next();
   });
 
@@ -150,14 +182,22 @@ function buildBot(env: Env): Bot<BotContext> {
     const data = ctx.callbackQuery.data;
     const result = await handleAction(ctx.assistant, data);
     await ctx.answerCallbackQuery({ text: result.toast });
-    if (!result.appendHtml && !result.clearButtons) return;
+    if (result.notify) {
+      const { telegramId, html } = result.notify;
+      await ctx.api
+        .sendMessage(telegramId, html, { parse_mode: "HTML" })
+        .catch((err) => console.warn("Could not notify user", { telegramId, error: String(err) }));
+    }
+    if (!result.appendHtml && !result.clearButtons && !result.removeAllButtons) return;
 
     const original = ctx.callbackQuery.message;
     // Keep the other buttons (e.g. the remaining 🗑 buttons of a multi-transaction message); drop only the tapped one.
     const rows = (original?.reply_markup?.inline_keyboard ?? [])
       .map((row) => row.filter((b) => !("callback_data" in b) || b.callback_data !== data))
       .filter((row) => row.length > 0);
-    const markup: InlineKeyboardMarkup = { inline_keyboard: result.clearButtons && !result.appendHtml ? [] : rows };
+    const markup: InlineKeyboardMarkup = {
+      inline_keyboard: result.removeAllButtons || (result.clearButtons && !result.appendHtml) ? [] : rows,
+    };
 
     if (result.appendHtml && original && "text" in original && original.text) {
       const text = `${esc(original.text)}\n\n${result.appendHtml}`;

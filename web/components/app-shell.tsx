@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, LayoutDashboard, LogOut, ReceiptText, Wallet } from "lucide-react";
+import { BellRing, LayoutDashboard, LogOut, ReceiptText, Users, Wallet } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
@@ -21,6 +21,8 @@ function isActive(pathname: string, href: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user } = useSession();
+  // The Users page is only for owners (IDs in ALLOWED_TELEGRAM_IDS).
+  const nav = user.is_owner ? [...NAV, { href: "/users", label: "Pengguna", icon: Users }] : NAV;
 
   async function logout() {
     await api.logout().catch(() => undefined);
@@ -40,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           Catatku
         </div>
         <nav className="flex-1 space-y-1 px-3">
-          {NAV.map(({ href, label, icon: Icon }) => (
+          {nav.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
@@ -79,8 +81,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className="min-w-0 px-4 pb-24 pt-6 md:px-8 md:pb-10">{children}</main>
 
       {/* Bottom tabs (mobile) */}
-      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-3 border-t bg-card md:hidden">
-        {NAV.map(({ href, label, icon: Icon }) => (
+      <nav className={cn("fixed inset-x-0 bottom-0 z-20 grid border-t bg-card md:hidden", nav.length > 3 ? "grid-cols-4" : "grid-cols-3")}>
+        {nav.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}

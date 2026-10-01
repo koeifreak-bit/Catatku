@@ -7,7 +7,7 @@
  */
 import { Hono } from "hono";
 import type { AppContext, Env } from "../env";
-import { allowedTelegramIds, publicUrl } from "../env";
+import { ownerTelegramIds, publicUrl } from "../env";
 import { sha256 } from "../lib/auth";
 import { getDb } from "../lib/db";
 import { escapeHtml, page } from "../lib/page";
@@ -99,22 +99,29 @@ setup.post("/", async (c) => {
   has("GEMINI_API_KEY", "Add it under Settings → Variables and Secrets.");
   has("SESSION_SECRET", "Add any long random text as this secret.");
   const tokenOk = has("TELEGRAM_BOT_TOKEN", "The token from @BotFather.");
-  const allowed = allowedTelegramIds(env);
+  const owners = ownerTelegramIds(env);
   checks.push({
-    ok: allowed.size > 0,
-    label: allowed.size ? `ALLOWED_TELEGRAM_IDS (${allowed.size} user${allowed.size > 1 ? "s" : ""})` : "ALLOWED_TELEGRAM_IDS",
-    hint: allowed.size ? undefined : "Not set: anyone who finds your bot can use it. Add your Telegram ID.",
+    ok: owners.size > 0,
+    label: owners.size ? `ALLOWED_TELEGRAM_IDS (${owners.size} owner${owners.size > 1 ? "s" : ""})` : "ALLOWED_TELEGRAM_IDS",
+    hint: owners.size ? undefined : "Not set: anyone who finds your bot can use it. Add your own Telegram ID as the owner.",
   });
 
-  // Database: the SQL file must have been run in Supabase.
+  // Database: both SQL files must have been run in Supabase.
   if (env.SUPABASE_URL && env.SUPABASE_SECRET_KEY) {
+    const db = getDb(env);
     try {
-      const { count, error } = await getDb(env).from("categories").select("id", { count: "exact", head: true });
+      const { count, error } = await db.from("categories").select("id", { count: "exact", head: true });
       if (error) throw new Error(error.message);
       checks.push({ ok: (count ?? 0) > 0, label: `Database connected (${count ?? 0} categories)`, hint: count ? undefined : "Run the SQL file in Supabase's SQL Editor." });
     } catch (err) {
       checks.push({ ok: false, label: "Database connection", hint: `${(err as Error).message}. Check SUPABASE_URL / SUPABASE_SECRET_KEY, and that you ran the SQL file.` });
     }
+    const { error: peopleError } = await db.from("allowed_users").select("telegram_id", { count: "exact", head: true });
+    checks.push({
+      ok: !peopleError,
+      label: "People list (for approving other users)",
+      hint: peopleError ? "Run supabase/migrations/20261001000000_allowed_users.sql in Supabase's SQL Editor." : undefined,
+    });
   }
 
   // Telegram: register the webhook for this Worker's URL and publish the command menu.

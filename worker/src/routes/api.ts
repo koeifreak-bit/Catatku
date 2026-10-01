@@ -1,10 +1,20 @@
 import { type Context, Hono } from "hono";
-import { getCookie } from "hono/cookie";
+import { deleteCookie, getCookie } from "hono/cookie";
 import { z } from "zod";
-import type { AppContext } from "../env";
+import { type AppContext, ownerTelegramIds } from "../env";
 import { SESSION_COOKIE, verifySessionJwt } from "../lib/auth";
 import { type CategoryRow, type TransactionRow, TX_SELECT, getDb, must } from "../lib/db";
 import { dayBounds, isZoneName, parseAiDateTime, parsePeriod, periodKey, safeTz } from "../lib/dates";
+import { Api } from "grammy";
+import {
+  APPROVED_MESSAGE,
+  accessFor,
+  approveUser,
+  blockUser,
+  canUse,
+  listAllowedUsers,
+  removeAllowedUser,
+} from "../services/access";
 import { AIError, type FinancialInsight, generateInsight } from "../services/ai";
 import {
   cancelReminder,
@@ -32,7 +42,20 @@ api.use("*", async (c, next) => {
       return c.json({ error: "content-type must be application/json" }, 415);
     }
   }
+  // The session is only as good as the person's access: if an owner removed or blocked them, log them out.
+  const db = getDb(c.env);
+  const user = await getUser(db, userId);
+  const access = user ? await accessFor(c.env, db, Number(user.telegram_id)) : "unknown";
+  if (!user) {
+    deleteCookie(c, SESSION_COOKIE, { path: "/" });
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  // Keep the cookie on 403 so the dashboard can show "access removed" rather than the generic login screen.
+  // It's useless anyway: every request re-checks access.
+  if (!canUse(access)) return c.json({ error: "access_revoked" }, 403);
   c.set("userId", userId);
+  c.set("user", user);
+  c.set("isOwner", access === "owner");
   await next();
 });
 
@@ -54,9 +77,7 @@ async function body<S extends z.ZodType>(c: Context<AppContext>, schema: S): Pro
 }
 
 async function currentUser(c: Context<AppContext>) {
-  const user = await getUser(getDb(c.env), c.get("userId"));
-  if (!user) throw new Error("Session user no longer exists");
-  return user;
+  return c.get("user");
 }
 
 function idParam(c: Context<AppContext>): number | null {
@@ -68,7 +89,10 @@ function idParam(c: Context<AppContext>): number | null {
 // Me / settings
 // ---------------------------------------------------------------------------
 
-api.get("/me", async (c) => c.json(await currentUser(c)));
+api.get("/me", (c) => {
+  const { telegram_chat_id: _chat, ...user } = c.get("user");
+  return c.json({ ...user, is_owner: c.get("isOwner"), open_mode: ownerTelegramIds(c.env).size === 0 });
+});
 
 const SettingsPatch = z
   .object({
@@ -447,4 +471,112 @@ api.delete("/reminders/:id", async (c) => {
   if (!id) return c.json({ error: "not_found" }, 404);
   const ok = await cancelReminder(getDb(c.env), c.get("userId"), id);
   return ok ? c.body(null, 204) : c.json({ error: "not_found" }, 404);
+});
+
+// ---------------------------------------------------------------------------
+// People (owner only): who may use the bot
+// ---------------------------------------------------------------------------
+
+function ownerOnly(c: Context<AppContext>): Response | null {
+  return c.get("isOwner") ? null : c.json({ error: "owner_only", message: "Only the bot owner can manage people." }, 403);
+}
+
+function telegramIdParam(c: Context<AppContext>): number | null {
+  const id = Number(c.req.param("telegramId"));
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/** Message someone through the bot (best effort: they may never have opened it, or may have blocked it). */
+async function tellUser(c: Context<AppContext>, telegramId: number, html: string): Promise<boolean> {
+  if (!c.env.TELEGRAM_BOT_TOKEN) return false;
+  try {
+    await new Api(c.env.TELEGRAM_BOT_TOKEN).sendMessage(telegramId, html, { parse_mode: "HTML" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+api.get("/admin/users", async (c) => {
+  const denied = ownerOnly(c);
+  if (denied) return denied;
+  const db = getDb(c.env);
+  const owners = [...ownerTelegramIds(c.env)];
+  const people = await listAllowedUsers(db);
+  const ids = [...new Set([...owners, ...people.map((p) => Number(p.telegram_id))])];
+  // Which of them have actually started using the bot (they have a users row)?
+  const started = ids.length
+    ? (must(
+        await db.from("users").select("telegram_id,first_name,username,created_at").in("telegram_id", ids),
+        "load started users",
+      ) as { telegram_id: number; first_name: string | null; username: string | null; created_at: string }[])
+    : [];
+  const byId = new Map(started.map((u) => [Number(u.telegram_id), u]));
+  return c.json({
+    open_mode: owners.length === 0,
+    owners: owners.map((id) => ({
+      telegram_id: id,
+      name: byId.get(id)?.first_name ?? null,
+      username: byId.get(id)?.username ?? null,
+      started_at: byId.get(id)?.created_at ?? null,
+      is_me: id === Number(c.get("user").telegram_id),
+    })),
+    people: people
+      .filter((p) => !owners.includes(Number(p.telegram_id)))
+      .map((p) => ({
+        ...p,
+        telegram_id: Number(p.telegram_id),
+        name: p.name ?? byId.get(Number(p.telegram_id))?.first_name ?? null,
+        username: p.username ?? byId.get(Number(p.telegram_id))?.username ?? null,
+        started_at: byId.get(Number(p.telegram_id))?.created_at ?? null,
+      })),
+  });
+});
+
+const AddPerson = z.object({
+  telegram_id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  name: z.string().trim().max(64).optional(),
+});
+
+api.post("/admin/users", async (c) => {
+  const denied = ownerOnly(c);
+  if (denied) return denied;
+  const input = await body(c, AddPerson);
+  if (input instanceof Response) return input;
+  if (ownerTelegramIds(c.env).has(input.telegram_id)) {
+    return c.json({ error: "already_owner", message: "That ID is already an owner." }, 409);
+  }
+  const before = await approveUser(getDb(c.env), input.telegram_id, Number(c.get("user").telegram_id), input.name || null);
+  // If they already asked (pending), tell them they're in. Otherwise they find out when they message the bot.
+  const notified = before === "pending" ? await tellUser(c, input.telegram_id, APPROVED_MESSAGE) : false;
+  return c.json({ ok: true, previous: before, notified }, 201);
+});
+
+const PersonPatch = z.object({ status: z.enum(["approved", "blocked"]) });
+
+api.patch("/admin/users/:telegramId", async (c) => {
+  const denied = ownerOnly(c);
+  if (denied) return denied;
+  const id = telegramIdParam(c);
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const input = await body(c, PersonPatch);
+  if (input instanceof Response) return input;
+  const db = getDb(c.env);
+  const me = Number(c.get("user").telegram_id);
+  if (input.status === "approved") {
+    const before = await approveUser(db, id, me);
+    const notified = before !== "approved" ? await tellUser(c, id, APPROVED_MESSAGE) : false;
+    return c.json({ ok: true, notified });
+  }
+  await blockUser(db, id, me);
+  return c.json({ ok: true });
+});
+
+api.delete("/admin/users/:telegramId", async (c) => {
+  const denied = ownerOnly(c);
+  if (denied) return denied;
+  const id = telegramIdParam(c);
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const removed = await removeAllowedUser(getDb(c.env), id);
+  return removed ? c.body(null, 204) : c.json({ error: "not_found" }, 404);
 });

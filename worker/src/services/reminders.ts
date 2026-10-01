@@ -1,8 +1,9 @@
 import { Api, GrammyError, InlineKeyboard } from "grammy";
 import { reminderNotification } from "../core/format";
-import type { Env } from "../env";
+import { type Env, ownerTelegramIds } from "../env";
 import { type ReminderRow, type UserRow, getDb, must } from "../lib/db";
 import { safeTz } from "../lib/dates";
+import { type Access, accessForMany, canUse } from "./access";
 
 /**
  * Called by the per-minute Cron Trigger. Claims due reminders atomically in Postgres
@@ -22,10 +23,20 @@ export async function dispatchDueReminders(env: Env): Promise<{ sent: number; fa
 
   const userIds = [...new Set(due.map((r) => r.user_id))];
   const users = must(
-    await db.from("users").select("id,telegram_chat_id,timezone,currency").in("id", userIds),
+    await db.from("users").select("id,telegram_id,telegram_chat_id,timezone,currency").in("id", userIds),
     "load reminder users",
-  ) as Pick<UserRow, "id" | "telegram_chat_id" | "timezone" | "currency">[];
+  ) as Pick<UserRow, "id" | "telegram_id" | "telegram_chat_id" | "timezone" | "currency">[];
   const byId = new Map(users.map((u) => [u.id, u]));
+  // People removed or blocked by an owner stop getting reminders too. If the lookup itself fails
+  // (e.g. the people-list SQL hasn't been run yet), owners still get theirs and nobody's are lost.
+  let access: Map<number, Access>;
+  try {
+    access = await accessForMany(env, db, users.map((u) => Number(u.telegram_id)));
+  } catch (err) {
+    console.error("Access lookup failed; only owners get reminders this run", String(err));
+    const owners = ownerTelegramIds(env);
+    access = new Map(users.map((u) => [Number(u.telegram_id), owners.size === 0 || owners.has(Number(u.telegram_id)) ? "owner" : "unknown"]));
+  }
 
   let sent = 0;
   let failed = 0;
@@ -35,6 +46,15 @@ export async function dispatchDueReminders(env: Env): Promise<{ sent: number; fa
       const keyboard = new InlineKeyboard().text("✅ Sudah", `done:${r.id}`).text("⏰ Tunda 1 jam", `snooze:${r.id}`);
       try {
         if (!u) throw new Error("Reminder owner not found");
+        if (!canUse(access.get(Number(u.telegram_id)) ?? "unknown")) {
+          // Paused, not destroyed: put it back and look again in an hour. If an owner lets this person
+          // back in, their reminders (including recurring ones) carry on.
+          await db
+            .from("reminders")
+            .update({ status: "pending", claimed_at: null, attempts: 0, remind_at: new Date(Date.now() + 3_600_000).toISOString() })
+            .eq("id", r.id);
+          return;
+        }
         await api.sendMessage(u.telegram_chat_id, reminderNotification(r, safeTz(u.timezone), u.currency), {
           parse_mode: "HTML",
           reply_markup: keyboard,

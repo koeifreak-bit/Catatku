@@ -68,6 +68,14 @@ export default function TransactionsPage() {
   const { data, isLoading, mutate } = useSWR<Paginated<Transaction>>(paths.transactions(filters), { keepPreviousData: true });
   const { data: categories } = useSWR<Category[]>(paths.categories, { refreshInterval: 0 });
 
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // If rows were deleted elsewhere the server returns the last page that exists; follow it.
+  useEffect(() => {
+    // (Only when we're past the last page: while a new page loads, `data` still holds the previous one.)
+    if (data && (filters.page ?? 1) > data.pages) setFilters((f) => ({ ...f, page: data.pages }));
+  }, [data, filters.page]);
+
   const update = (patch: Partial<TransactionFilters>) => setFilters((f) => ({ ...f, page: 1, ...patch }));
   const isFiltered =
     !!(filters.search || filters.type || filters.category_id || filters.date_from || filters.date_to);
@@ -75,10 +83,13 @@ export default function TransactionsPage() {
   async function confirmDelete() {
     if (!deleting) return;
     setBusy(true);
+    setActionError(null);
     try {
       await api.deleteTransaction(deleting.id);
       await mutate();
       setDeleting(null);
+    } catch (err) {
+      setActionError(`Gagal menghapus: ${(err as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -86,11 +97,15 @@ export default function TransactionsPage() {
 
   async function doExport(kind: "csv" | "xlsx") {
     setExporting(kind);
+    setActionError(null);
     try {
-      const { items, timezone } = await api.exportTransactions(filters);
+      const { items, timezone, truncated } = await api.exportTransactions(filters);
       const stamp = new Date().toISOString().slice(0, 10);
       if (kind === "csv") exportCsv(items, timezone, `catatku-transaksi-${stamp}.csv`);
       else exportXlsx(items, timezone, `catatku-transaksi-${stamp}.xlsx`);
+      if (truncated) setActionError("Hanya 10.000 transaksi pertama yang diekspor. Persempit filter tanggal untuk sisanya.");
+    } catch (err) {
+      setActionError(`Gagal mengekspor: ${(err as Error).message}`);
     } finally {
       setExporting(null);
     }
@@ -120,6 +135,12 @@ export default function TransactionsPage() {
           </Button>
         </div>
       </div>
+
+      {actionError && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {actionError}
+        </p>
+      )}
 
       {/* Filters — one row above the data */}
       <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_160px_200px_150px_150px_auto]">

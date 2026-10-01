@@ -89,7 +89,8 @@ Open Notepad and keep a private `catatku-keys.txt` for the codes you collect alo
 
 1. Click **New project**. Name it `catatku`, set a database password, and pick region **Southeast Asia (Singapore)**. Wait about 2 minutes.
 2. Open **SQL Editor → New query**. Paste the whole of `supabase/migrations/20260928000000_init.sql` (open it in Notepad,
-   then Ctrl+A, Ctrl+C) and click **Run**. You should see "Success. No rows returned".
+   then Ctrl+A, Ctrl+C) and click **Run**. You should see "Success. No rows returned". Then do the same with
+   `supabase/migrations/20261001000000_allowed_users.sql`. Both files are safe to run again.
 3. Copy the **Project URL** (`https://….supabase.co`, under **Project Settings → Data API**) and a **secret key**
    (`sb_secret_…`, under **Project Settings → API Keys**). The secret key bypasses database security; never share it.
 
@@ -143,7 +144,7 @@ paste the value, and save (**Deploy**).
 | `SUPABASE_SECRET_KEY` | Supabase secret key |
 | `GEMINI_API_KEY` | Gemini key |
 | `TELEGRAM_BOT_TOKEN` | Token from @BotFather |
-| `ALLOWED_TELEGRAM_IDS` | Your Telegram ID (comma-separate several). **Set this**, or anyone who finds your bot can use it and spend your AI quota. |
+| `ALLOWED_TELEGRAM_IDS` | Your Telegram ID: you become the bot's **owner** (comma-separate several owners). **Set this**, or anyone who finds your bot can use it and spend your AI quota. Other people are added from the dashboard; see "Adding other people". |
 | `SESSION_SECRET` | Any long random text (signs dashboard logins) |
 | `TELEGRAM_WEBHOOK_SECRET` | Any long random text, letters/digits/`_`/`-` only. Also the password for the setup page. |
 
@@ -185,6 +186,21 @@ Ingatkan bayar listrik tanggal 25 jam 9 pagi
 | `/zona WITA` | Change timezone: `WIB`, `WITA`, `WIT` or any name like `Asia/Singapore` |
 
 Commands that take no argument also work without the slash: `saldo`, `laporan`, `undo`, `dashboard`, `help`.
+
+## Adding other people
+
+Everyone who uses the bot gets their own separate account: transactions, budget, reminders and dashboard. Nobody can see
+anyone else's data.
+
+- **The easy way:** ask them to message your bot. The bot tells them their request was sent, and you (the owner) get a Telegram
+  message with **✅ Izinkan** / **🚫 Tolak** buttons. Tap **Izinkan** and they get a "you're in" message.
+- **From the dashboard:** owners see a **Pengguna** (Users) page. Add someone by Telegram ID, approve or decline pending
+  requests, and remove people. Removing someone also logs them out of the dashboard and stops their reminders; their data
+  is kept in case you let them back in.
+- **Owners** are the IDs in the `ALLOWED_TELEGRAM_IDS` secret in Cloudflare. They can't be removed from the dashboard.
+- **Upgrading from an earlier version?** Run `20261001000000_allowed_users.sql` in Supabase's SQL Editor. If you had put
+  friends or family in `ALLOWED_TELEGRAM_IDS`, they are now owners too: set it back to just your own ID, then add them
+  on the **Pengguna** page.
 
 ## How it works
 
@@ -270,7 +286,9 @@ Checks: `cd worker && npm run typecheck && npm test`, and `cd web && npm run typ
 - **Anything not working:** open `/setup` again. It lists exactly which setting is missing or wrong.
 - **The Cloudflare build failed:** open **Workers & Pages → catatku → Deployments** and view the build log. The usual causes are
   the root directory not set to `worker`, or a project name other than `catatku`.
-- **The bot replies "⛔ Bot ini privat" with a number:** put exactly that number in the `ALLOWED_TELEGRAM_IDS` secret.
+- **Someone gets "Bot ini privat":** they're not approved yet. Approve them with the **Izinkan** button in your Telegram, or on the
+  dashboard's **Pengguna** page. Only put *owners* in `ALLOWED_TELEGRAM_IDS`: everyone listed there can approve and remove people.
+- **The bot says your own request is waiting:** your ID isn't in `ALLOWED_TELEGRAM_IDS`. Add it in Cloudflare.
 - **See what the bot is doing:** **Workers & Pages → catatku → Logs → Live**, then send the bot a message.
 - **"Link sudah dipakai atau kedaluwarsa":** send `/dashboard` again. Links expire after 10 minutes and work once.
 - **Wrong dates or times:** send `/zona WITA` (or `WIB`/`WIT`) to the bot.

@@ -16,19 +16,27 @@ export interface Env {
   SESSION_SECRET: string;
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
-  /** Comma-separated Telegram user IDs allowed to use the bot. Unset = anyone (not recommended). */
+  /**
+   * Comma-separated Telegram user IDs of the bot's OWNERS. Owners can always use the bot and can
+   * approve other people (dashboard Users page or the Telegram "Izinkan" button).
+   * Unset = anyone can use the bot (not recommended).
+   */
   ALLOWED_TELEGRAM_IDS?: string;
 }
 
-export type AppContext = { Bindings: Env; Variables: { userId: number } };
+export type AppContext = {
+  Bindings: Env;
+  Variables: { userId: number; user: import("./lib/db").UserRow; isOwner: boolean };
+};
 
-export function allowedTelegramIds(env: Env): Set<number> {
+/** Owner IDs from the ALLOWED_TELEGRAM_IDS secret. Anything that isn't a whole number is ignored. */
+export function ownerTelegramIds(env: Env): Set<number> {
   return new Set(
     (env.ALLOWED_TELEGRAM_IDS || "")
-      .split(",")
-      .map((s) => s.trim())
+      .split(/[\s,;]+/)
       .filter(Boolean)
-      .map(Number),
+      .map(Number)
+      .filter((n) => Number.isSafeInteger(n) && n > 0),
   );
 }
 
