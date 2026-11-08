@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG as cfg } from "../src/config";
-import { MAX_ATTEMPTS, processPirep, runCycle, type Store } from "../src/process";
+import { MAX_ATTEMPTS, MAX_TD_WAIT_CYCLES, processPirep, runCycle, type Store } from "../src/process";
 import type { PirepDetail, PirepSummary, PointEntry, Touchdown, VamsysPort } from "../src/vamsys";
 
 class MemStore implements Store {
@@ -222,5 +222,30 @@ describe("runCycle", () => {
     expect(r).toMatchObject({ rejected: false, score: { points: -200 } });
     expect(r.comment).toContain("not rejected");
     expect(api.calls).toEqual(["bonus:15", "comment:15"]);
+  });
+
+  it("re-checks a PIREP whose touchdown data arrives after filing (GIA659 case)", async () => {
+    store.m.set("lastSeenId", "100");
+    api.pireps = [pirep(101)];
+    api.touchdowns.set(101, []); // not attached yet
+    const first = await runCycle(api, store, cfg, live);
+    expect(first.map((r) => r.reason)).toEqual(["no touchdown data"]);
+    expect(store.m.has("done:live:101")).toBe(false);
+
+    api.touchdowns.set(101, [td(1770, 9842)]); // 539 m → +50
+    const second = await runCycle(api, store, cfg, live);
+    expect(second).toMatchObject([{ pirepId: 101, outcome: "scored", score: { points: 50 } }]);
+    expect(api.bonus.get(101)).toEqual([{ name: "TDZ: TDZ landing (539 m, RW25R)", points: 50 }]);
+    expect(JSON.parse(store.m.get("waitingForTouchdown")!)).toEqual([]);
+    expect(await runCycle(api, store, cfg, live)).toEqual([]); // nothing left, no double scoring
+  });
+
+  it("gives up waiting for touchdown data after MAX_TD_WAIT_CYCLES", async () => {
+    store.m.set("lastSeenId", "100");
+    api.pireps = [pirep(101)];
+    api.touchdowns.set(101, []);
+    for (let i = 0; i < MAX_TD_WAIT_CYCLES + 2; i++) await runCycle(api, store, cfg, live);
+    expect(JSON.parse(store.m.get("waitingForTouchdown")!)).toEqual([]);
+    expect(api.calls).toEqual([]);
   });
 });

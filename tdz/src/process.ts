@@ -34,6 +34,11 @@ const SKIP_STATUSES = new Set(["rejected", "invalidated", "invalid"]);
 const RESULT_TTL = 60 * 60 * 24 * 60; // 60 days
 /** A PIREP that keeps failing (API errors) is retried on this many cycles, then given up on. */
 export const MAX_ATTEMPTS = 3;
+export const NO_TD = "no touchdown data";
+/** PIREPs without touchdown data yet are re-checked every cycle for this many cycles (12 × 5 min = 1 h). */
+export const MAX_TD_WAIT_CYCLES = 12;
+
+interface Waiting { id: number; tries: number }
 
 const doneKey = (id: number, dryRun: boolean) => `done:${dryRun ? "dry" : "live"}:${id}`;
 
@@ -61,7 +66,8 @@ export async function processPirep(
   const base = { pirepId: pirep.id, callsign: pirep.callsign, dryRun: opts.dryRun, at: new Date().toISOString() };
   const finish = async (r: Result) => {
     await store.put(`result:${pirep.id}`, JSON.stringify(r), { expirationTtl: RESULT_TTL });
-    if (r.outcome !== "error") await store.put(doneKey(pirep.id, opts.dryRun), "1", { expirationTtl: RESULT_TTL });
+    // "no touchdown data" is not final: vAMSYS may attach the touchdowns shortly after the PIREP is filed.
+    if (r.outcome !== "error" && r.reason !== NO_TD) await store.put(doneKey(pirep.id, opts.dryRun), "1", { expirationTtl: RESULT_TTL });
     return r;
   };
 
@@ -75,7 +81,7 @@ export async function processPirep(
     const touchdowns = await api.getTouchdowns(pirep.id);
     // The final touchdown is the landing that counts (earlier ones are bounces / go-arounds).
     const td = [...touchdowns].reverse().find((t) => t.distance_from_start_ft != null);
-    if (!td) return finish({ ...base, outcome: "skipped", reason: "no touchdown data" });
+    if (!td) return finish({ ...base, outcome: "skipped", reason: NO_TD });
 
     // vAMSYS `lda` is the runway REMAINING after touchdown, so the runway length is distance + lda.
     const dist = td.distance_from_start_ft!;
@@ -151,6 +157,21 @@ export async function runCycle(
 
   const batch = fresh.reverse().slice(0, maxPerRun); // oldest first; the rest waits for the next cycle
   const results: Result[] = [];
+
+  // 1) Re-check PIREPs that had no touchdown data yet.
+  const waiting = JSON.parse((await store.get("waitingForTouchdown")) ?? "[]") as Waiting[];
+  const stillWaiting: Waiting[] = [];
+  for (const w of waiting) {
+    try {
+      const pirep = await api.getPirep(w.id);
+      const r = await processPirep(api, store, pirep, cfg, opts);
+      if (r.reason === NO_TD && w.tries + 1 < MAX_TD_WAIT_CYCLES) stillWaiting.push({ id: w.id, tries: w.tries + 1 });
+      else results.push(r);
+    } catch {
+      if (w.tries + 1 < MAX_TD_WAIT_CYCLES) stillWaiting.push({ id: w.id, tries: w.tries + 1 });
+    }
+  }
+
   for (const p of batch) {
     const r = await processPirep(api, store, p, cfg, opts);
     results.push(r);
@@ -159,7 +180,9 @@ export async function runCycle(
       await store.put(`attempts:${p.id}`, String(attempts), { expirationTtl: 60 * 60 * 24 * 7 });
       if (attempts < MAX_ATTEMPTS) break; // retry this PIREP next cycle
     }
+    if (r.reason === NO_TD) stillWaiting.push({ id: p.id, tries: 0 });
     await store.put("lastSeenId", String(p.id));
   }
+  await store.put("waitingForTouchdown", JSON.stringify(stillWaiting));
   return results;
 }
