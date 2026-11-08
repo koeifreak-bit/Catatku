@@ -1,29 +1,49 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG as cfg } from "../src/config";
-import { FT_TO_M, scoreTouchdown } from "../src/score";
+import { FT_TO_M, scoreTouchdown, tdzEnd } from "../src/score";
 
-const LONG_RWY_FT = 12000; // LDA/3 ≈ 1219 m, so the TDZ end is 900 m
 const ft = (m: number) => m / FT_TO_M;
-const at = (m: number, lda = LONG_RWY_FT) => scoreTouchdown(ft(m), lda, cfg);
+const LONG = ft(3000); // LDA 3000 m → 6 pairs → TDZ ends 922.5 m
+const at = (m: number, ldaFt = LONG) => scoreTouchdown(ft(m), ldaFt, cfg);
 
-describe("scoreTouchdown on a long runway (TDZ end 900 m)", () => {
+describe("tdzEnd: end of the last ICAO TDZ marking", () => {
   it.each([
-    [0, 50, "none"],
-    [299.9, 50, "none"],
+    [800, 1, 172.5],
+    [899, 1, 172.5],
+    [900, 2, 322.5],
+    [1199, 2, 322.5],
+    [1200, 3, 472.5],
+    [1499, 3, 472.5],
+    [1500, 4, 622.5],
+    [2399, 4, 622.5],
+    [2400, 6, 922.5],
+    [4000, 6, 922.5],
+  ])("LDA %d m → %d pairs, ends at %d m", (ldaM, pairs, endM) => {
+    expect(tdzEnd(ft(ldaM), cfg)).toEqual({ pairs, endM });
+  });
+
+  it("uses the full 6-pair pattern when LDA is unknown", () => {
+    expect(tdzEnd(null, cfg)).toEqual({ pairs: 6, endM: 922.5 });
+    expect(tdzEnd(0, cfg)).toEqual({ pairs: 6, endM: 922.5 });
+  });
+});
+
+describe("scoreTouchdown on a 6-pair runway (TRISTAN's revision, 8 Nov 2026)", () => {
+  it.each([
+    [0, 0, "none"],
+    [299.9, 0, "none"],
     [300, 100, "none"],
     [399.9, 100, "none"],
     [400, 50, "none"],
     [599.9, 50, "none"],
-    [600, -100, "none"],
-    [899.9, -100, "none"],
-    [900, -100, "none"],
-    [900.5, -200, "reject"],
+    [600, 0, "none"],
+    [609.6, 0, "none"], // 2000 ft is NOT a reject
+    [900, 0, "none"],
+    [922.5, 0, "none"], // exactly at the end of the last marking
+    [923, -200, "reject"],
     [1500, -200, "reject"],
   ])("%d m → %d pts (%s)", (m, points, action) => {
-    const s = at(m);
-    expect(s.points).toBe(points);
-    expect(s.action).toBe(action);
-    expect(s.tdzEndM).toBe(900);
+    expect(at(m)).toMatchObject({ points, action });
   });
 
   it("flags touchdowns before the threshold for review with no points", () => {
@@ -31,23 +51,26 @@ describe("scoreTouchdown on a long runway (TDZ end 900 m)", () => {
   });
 });
 
-describe("short runway: TDZ end = LDA / 3", () => {
-  // Real IJV example: RW16, LDA 6185 ft → 1885 m → TDZ end ≈ 628 m
-  it("rejects a landing past LDA/3 even when it is under 900 m", () => {
-    const s = scoreTouchdown(ft(650), 6185, cfg);
-    expect(s.tdzEndM).toBeCloseTo(628.4, 1);
-    expect(s).toMatchObject({ points: -200, action: "reject" });
+describe("shorter runways reject once their markings run out", () => {
+  it("4 pairs (LDA 1500–2400 m): reject past 622.5 m", () => {
+    expect(scoreTouchdown(ft(620), 6185, cfg)).toMatchObject({ points: 0, action: "none" });
+    expect(scoreTouchdown(ft(630), 6185, cfg)).toMatchObject({ points: -200, action: "reject" });
   });
-  it("still scores inside the shortened TDZ", () => {
-    expect(scoreTouchdown(ft(620), 6185, cfg)).toMatchObject({ points: -100, action: "none" });
-    expect(scoreTouchdown(1196, 6185, cfg)).toMatchObject({ points: 100, action: "none" }); // real: 365 m
+  it("3 pairs (LDA 1200–1500 m): 450 m is fine, 480 m is rejected", () => {
+    expect(scoreTouchdown(ft(450), ft(1400), cfg)).toMatchObject({ points: 50, action: "none" });
+    expect(scoreTouchdown(ft(480), ft(1400), cfg)).toMatchObject({ points: -200, action: "reject" });
   });
 });
 
-it("falls back to the 900 m TDZ end when LDA is unknown", () => {
-  expect(scoreTouchdown(ft(850), null, cfg).tdzEndM).toBe(900);
-});
-
-it("matches a real IJV PIREP (GIA162, RW33, 1954 ft) → 596 m → +50", () => {
-  expect(scoreTouchdown(1954, 7888, cfg)).toMatchObject({ points: 50, action: "none" });
+describe("real IJV PIREPs (runway length = distance + vAMSYS lda)", () => {
+  it.each([
+    ["GIA162 WIEE RW33", 1954, 7888, 50, "none"], // 596 m on a 3000 m runway
+    ["CTV970 RW16", 1196, 6185, 100, "none"], // 365 m
+    ["GIA604 RW26", 968, 7754, 0, "none"], // 295 m
+    ["GIA407 WIII RW06", 2087, 7754.4, 0, "none"], // 636 m on 3000 m: was wrongly rejected
+    ["CTV350 WAAA RW21 (903 m)", 2963, 7208.9, 0, "none"], // inside the 922.5 m box
+    ["CTV350 WAAA RW21 (995 m)", 3264, 6900, -200, "reject"], // past the last marking
+  ])("%s", (_n, dist, lda, points, action) => {
+    expect(scoreTouchdown(dist, dist + lda, cfg)).toMatchObject({ points, action });
+  });
 });

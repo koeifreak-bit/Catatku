@@ -4,15 +4,21 @@ A free Cloudflare Worker. Every 5 minutes it reads new PIREPs from the vAMSYS Op
 touched down, and writes the result back to the PIREP as a bonus entry and a comment. It rejects the PIREP when the
 landing was past the touchdown zone. See [SPEC.md](SPEC.md) for the rules.
 
-| Touchdown distance from runway start | Points |
-|---|---|
-| 0–300 m | +50 |
-| 300–400 m (aiming point) | +100 |
-| 400–600 m | +50 |
-| 600 m – TDZ end | −100 |
-| beyond TDZ end | −200 and **PIREP rejected** |
+| Touchdown distance from runway start | Points | Action |
+|---|---|---|
+| 0 – 300 m | 0 | — |
+| 300 – 400 m (aiming point) | **+100** | — |
+| 400 – 600 m | **+50** | — |
+| 600 m – end of last TDZ marking | 0 | — |
+| past the last TDZ marking | **−200** | **PIREP rejected** |
+| before the threshold | 0 | flagged for staff review |
 
-The TDZ end is the smaller of 900 m and ⅓ of the runway's LDA. Bands live in `src/config.ts`.
+The TDZ ends at the far end of the last ICAO touchdown-zone marking (Annex 14). The number of marking pairs depends on
+runway length: < 900 m → 1 pair (ends 172.5 m) · 900–1200 → 2 (322.5 m) · 1200–1500 → 3 (472.5 m) ·
+1500–2400 → 4 (622.5 m) · ≥ 2400 m → 6 (**922.5 m**). Runway length = `distance_from_start_ft + lda`, because vAMSYS's
+`lda` is the runway *remaining* after touchdown.
+
+Bands live in `src/config.ts`.
 
 ## Deploy (no install needed, free tier)
 
@@ -28,7 +34,7 @@ The TDZ end is the smaller of 900 m and ⅓ of the runway's LDA. Bands live in `
 
 ## Going live safely
 
-The Worker starts in **dry run**: it scores PIREPs but writes nothing to vAMSYS.
+Live since 8 Nov 2026 at https://vamsys-tdz.koeifreak.workers.dev (`DRY_RUN` = `false`). With `DRY_RUN` = `true` it scores PIREPs but writes nothing.
 
 1. Leave it running for a day, then check `GET /recent?token=ADMIN_TOKEN` to see what it *would* have done.
 2. Test one PIREP for real (it gets a bonus entry and a comment, and a reject if the landing was past the TDZ):

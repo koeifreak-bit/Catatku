@@ -6,8 +6,8 @@
   "observability": { "enabled": true },
   // Poll vAMSYS for new PIREPs every 5 minutes.
   "triggers": { "crons": ["*/5 * * * *"] },
-  // Wrangler creates the KV namespace automatically on the first deploy.
-  "kv_namespaces": [{ "binding": "TDZ_KV" }],
+  // KV namespace created on the first deploy (8 Nov 2026).
+  "kv_namespaces": [{ "binding": "TDZ_KV", "id": "9fba588f2ae145149a6bba2f7c01c64f" }],
   "vars": {
     // Set to "false" ONLY after the single-PIREP live test has been checked.
     "DRY_RUN": "true"

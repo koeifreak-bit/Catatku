@@ -18,7 +18,7 @@ const api = (env: Env) => new VamsysApi(env.VAMSYS_CLIENT_ID, env.VAMSYS_CLIENT_
 async function remember(env: Env, results: Result[]) {
   if (!results.length) return;
   const prev = JSON.parse((await env.TDZ_KV.get("recent")) ?? "[]") as Result[];
-  await env.TDZ_KV.put("recent", JSON.stringify([...results.reverse(), ...prev].slice(0, 100)));
+  await env.TDZ_KV.put("recent", JSON.stringify([...[...results].reverse(), ...prev].slice(0, 100)));
 }
 
 const json = (data: unknown, status = 200) =>

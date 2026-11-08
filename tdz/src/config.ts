@@ -5,26 +5,47 @@ export interface Band {
   label: string;
 }
 
+/** ICAO Annex 14 TDZ marking pairs by landing distance available. */
+export interface MarkingRule {
+  /** Applies when LDA (m) is below this. */
+  ldaBelowM: number;
+  pairs: number;
+}
+
 export interface TdzConfig {
-  /** Bands in ascending order. Distances beyond the TDZ end never reach a band. */
+  /** Bands in ascending order, all inside the TDZ. */
   bands: Band[];
-  /** The TDZ ends at min(tdzMaxM, LDA / ldaDivisor). */
-  tdzMaxM: number;
-  ldaDivisor: number;
+  /** From the last band to the end of the TDZ markings. */
+  long: { points: number; label: string };
+  /** Past the last TDZ marking: penalty + reject. */
   beyond: { points: number; label: string };
+  /** Pairs of TDZ markings by LDA; the last entry should use Infinity. */
+  markings: MarkingRule[];
+  /** Longitudinal spacing of the marking pairs from the threshold. */
+  pairSpacingM: number;
+  /** Length of one marking stripe; the TDZ ends at the far end of the last stripe. */
+  stripeLengthM: number;
   /** Prefix that marks our bonus entry, so re-runs replace it instead of stacking. */
   entryPrefix: string;
 }
 
+/** TRISTAN's revision of 8 Nov 2026 (runway drawing). */
 export const DEFAULT_CONFIG: TdzConfig = {
   bands: [
-    { untilM: 300, points: 50, label: "TDZ landing" },
+    { untilM: 300, points: 0, label: "Early touchdown" },
     { untilM: 400, points: 100, label: "Aiming point landing" },
     { untilM: 600, points: 50, label: "TDZ landing" },
-    { untilM: 900, points: -100, label: "Long landing" },
   ],
-  tdzMaxM: 900,
-  ldaDivisor: 3,
+  long: { points: 0, label: "Long landing" },
   beyond: { points: -200, label: "Landed beyond TDZ" },
+  markings: [
+    { ldaBelowM: 900, pairs: 1 },
+    { ldaBelowM: 1200, pairs: 2 },
+    { ldaBelowM: 1500, pairs: 3 },
+    { ldaBelowM: 2400, pairs: 4 },
+    { ldaBelowM: Infinity, pairs: 6 },
+  ],
+  pairSpacingM: 150,
+  stripeLengthM: 22.5,
   entryPrefix: "TDZ:",
 };

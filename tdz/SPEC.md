@@ -1,6 +1,6 @@
 # Spec: vAMSYS Touchdown Zone (TDZ) Scoring
 
-Status: **APPROVED v4** (8 Nov 2026) · Owner: VA staff (TRISTAN / VTSM)
+Status: **APPROVED v5**, LIVE (8 Nov 2026) · Owner: VA staff (TRISTAN / VTSM)
 
 ## Objective
 
@@ -11,24 +11,21 @@ bonus entry, which shows up in Orwell. Landings past the touchdown zone are reje
 
 No paid hosting, no PHP, and no Discord.
 
-## Scoring rule
+## Scoring rule (revision of 8 Nov 2026, from TRISTAN's runway drawing)
 
-Distance is measured from the landing threshold to the main-gear touchdown point. It's based on the ICAO
-touchdown-zone marking pattern: marking pairs at 150 / 300 / 600 / 750 / 900 m, with the aiming point at 400 m.
-
-The **TDZ end** is the smaller of **900 m** and **⅓ of the runway's LDA** (landing distance available). Short runways have fewer TDZ markings.
-
-| Distance past threshold | Points | Action |
+| Touchdown distance from runway start | Points | Action |
 |---|---|---|
-| 0 – 300 m | **+50** "TDZ landing" | — |
-| 300 – 400 m (aiming point) | **+100** "Aiming point landing" | — |
-| 400 – 600 m (≈ 2000 ft) | **+50** "TDZ landing" | — |
-| 600 m – TDZ end | **−100** "Long landing" | — |
-| beyond TDZ end (past the last TDZ marking, the circled box) | **−200** "Landed beyond TDZ" | **PIREP rejected** |
-| < 0 m (before the threshold) | 0 | internal note for staff review |
+| 0 – 300 m | 0 | — |
+| 300 – 400 m (aiming point) | **+100** | — |
+| 400 – 600 m | **+50** | — |
+| 600 m – end of last TDZ marking | 0 | — |
+| past the last TDZ marking | **−200** | **PIREP rejected** |
+| before the threshold | 0 | flagged for staff review |
 
-Bands are clipped at the TDZ end. On a 1500 m runway, for example, the TDZ ends at 500 m, so 400–500 m earns +50 and anything past 500 m is rejected.
-PIREPs are **auto-accepted** by vAMSYS, so the bot also scores accepted PIREPs and can reject them afterwards.
+The TDZ ends at the far end of the last ICAO touchdown-zone marking (Annex 14). The number of marking pairs depends on
+runway length: < 900 m → 1 pair (ends 172.5 m) · 900–1200 → 2 (322.5 m) · 1200–1500 → 3 (472.5 m) ·
+1500–2400 → 4 (622.5 m) · ≥ 2400 m → 6 (**922.5 m**). Runway length = `distance_from_start_ft + lda`, because vAMSYS's
+`lda` is the runway *remaining* after touchdown.
 
 Every limit and points value lives in a config file. Nothing is hard-coded.
 
@@ -99,7 +96,7 @@ export function scoreTouchdown(distM: number, cfg: TdzConfig): Score {
 
 ## Testing strategy
 
-- Unit tests for `score.ts` at every boundary: −1, 0, 299, 300, 399, 400, 599, 600, 899, 900, 901 m, plus a short runway where LDA/3 < 900 m, plus feet → metres conversion.
+- Unit tests for `score.ts` at every boundary: −1, 0, 299, 300, 399, 400, 599, 600, 899, 900, 922.5, 923 m, every ICAO marking-pair band, plus feet → metres conversion.
 - Tests for `process.ts` with a mocked API. They check that existing bonus entries are kept, that a re-run doesn't add a
   second TDZ entry, that reject is called only beyond 900 m, and that multi-touchdown PIREPs use the selected or last touchdown.
 - **Dry-run mode** (on by default for the first deploy): it logs what it *would* do without writing to vAMSYS. Switch it off once results look right.
@@ -114,19 +111,20 @@ export function scoreTouchdown(distM: number, cfg: TdzConfig): Score {
 
 1. Within 5 min of filing, a pending PIREP gets exactly one "TDZ" bonus entry with the right points and a comment showing the distance and runway.
 2. Event, rank and activity bonuses already on the PIREP are still there afterwards.
-3. A touchdown past the TDZ end (min(900 m, LDA/3)) gives −200 and status `rejected`, even if vAMSYS already auto-accepted it.
+3. A touchdown past the last TDZ marking gives −200 and status `rejected`, even if vAMSYS already auto-accepted it.
 4. Running it twice on the same PIREP changes nothing the second time.
 5. It costs $0 on the Cloudflare free tier.
 
 ## Verified against live data (IJV, 8 Nov 2026, API client 1355)
 
+- **`lda` is the runway remaining after touchdown**, not the runway's LDA. For WIII, distance + lda ≈ 3000 m on every landing.
 - `GET /pireps/{id}/touchdowns` **does** return single touchdowns too (the docs say otherwise). Example:
   `{"runway":"RW33","lda":7888,"distance_from_start_ft":1954, ...}`. The same values are in `pirep_data.touchdowns[]`.
   Some PIREPs have no touchdown data (runway/distance `null`). These are skipped, and no points are added.
 - Regular points live in `pirep_data.scores[]` (`name`, `points`). None of the last 100 PIREPs had a bonus, so bonus storage
-  hasn't been observed yet. TRISTAN reports TDZ points under *Rewards*, alongside other bonuses rather than replacing them.
+  is in `pirep_data.bonus_scores[]` (confirmed by the live test on PIREP 4111096). TRISTAN reports TDZ points under *Rewards*, alongside other bonuses rather than replacing them.
 - Auth: OAuth client credentials with `client_id` / `client_secret` sent in the request body. Tokens last 24 h.
-- **What the current rule would have done to the last 40 PIREPs** (38 with data):
+- **(v4, historical) What the v4 rule would have done to the last 40 PIREPs** (38 with data):
 
   | Band | Count |
   |---|---|
@@ -138,7 +136,7 @@ export function scoreTouchdown(distM: number, cfg: TdzConfig): Score {
 
 ## Open questions
 
-1. ~~Reject rate~~ **Decided:** keep min(900 m, LDA/3).
+1. ~~Reject rate~~ **Superseded (v5):** reject past the last ICAO TDZ marking. The earlier LDA/3 analysis below was skewed by misreading `lda`. Under v5, 1 of the last 36 PIREPs would be rejected.
 2. ~~Start vs threshold~~ **Decided:** use vAMSYS `distance_from_start_ft` as-is.
 3. **First live write:** to confirm that bonus entries add to existing Rewards instead of replacing them, we test on one chosen PIREP before turning off dry-run.
 4. **Repository:** it should live in its own repo (e.g. `koeifreak-bit/vamsys-tdz`). For now it's in `Catatku/tdz/`.

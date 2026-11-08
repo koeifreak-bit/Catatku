@@ -15,6 +15,7 @@ export interface Touchdown {
   index: number;
   rate: number;
   runway: string | null;
+  /** Runway REMAINING after the touchdown point, in feet (not the runway's full LDA). */
   lda: number | null;
   distance_from_start_ft: number | null;
   time: string | null;
