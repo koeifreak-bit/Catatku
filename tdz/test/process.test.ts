@@ -214,4 +214,13 @@ describe("runCycle", () => {
     const r = await processPirep(api, store, api.pireps[0]!, cfg, live);
     expect(r).toMatchObject({ rejected: false, score: { pairs: 6, tdzEndM: 922.5, points: 0 } });
   });
+
+  it("short runway (< 2500 m): −200 written, comment explains, no reject", async () => {
+    api.pireps = [pirep(15)];
+    api.touchdowns.set(15, [td(2100, 6500)]); // 640 m on a 1981 m runway (4 pairs → 622.5 m)
+    const r = await processPirep(api, store, api.pireps[0]!, cfg, live);
+    expect(r).toMatchObject({ rejected: false, score: { points: -200 } });
+    expect(r.comment).toContain("not rejected");
+    expect(api.calls).toEqual(["bonus:15", "comment:15"]);
+  });
 });

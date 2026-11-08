@@ -19,6 +19,8 @@ export interface TdzConfig {
   long: { points: number; label: string };
   /** Past the last TDZ marking: penalty + reject. */
   beyond: { points: number; label: string };
+  /** Runways shorter than this (m) still get the `beyond` penalty, but the PIREP is not rejected. */
+  noRejectBelowRunwayM: number;
   /** Pairs of TDZ markings by LDA; the last entry should use Infinity. */
   markings: MarkingRule[];
   /** Longitudinal spacing of the marking pairs from the threshold. */
@@ -38,6 +40,7 @@ export const DEFAULT_CONFIG: TdzConfig = {
   ],
   long: { points: 0, label: "Long landing" },
   beyond: { points: -200, label: "Landed beyond TDZ" },
+  noRejectBelowRunwayM: 2500,
   markings: [
     { ldaBelowM: 900, pairs: 1 },
     { ldaBelowM: 1200, pairs: 2 },

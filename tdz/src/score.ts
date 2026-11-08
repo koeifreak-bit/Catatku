@@ -31,7 +31,11 @@ export function scoreTouchdown(distanceFt: number, runwayFt: number | null, cfg:
   const base = { distM, tdzEndM, pairs };
 
   if (distM < 0) return { ...base, points: 0, label: "Short of threshold", action: "review" };
-  if (distM > tdzEndM) return { ...base, ...cfg.beyond, action: "reject" };
+  if (distM > tdzEndM) {
+    // Short runways: keep the penalty but don't reject (TRISTAN, 8 Nov 2026). Unknown length → long-runway rules.
+    const shortRunway = runwayFt != null && runwayFt > 0 && runwayFt * FT_TO_M < cfg.noRejectBelowRunwayM;
+    return { ...base, ...cfg.beyond, action: shortRunway ? "none" : "reject" };
+  }
 
   const band = cfg.bands.find((b) => distM < b.untilM);
   return { ...base, ...(band ?? cfg.long), action: "none" };

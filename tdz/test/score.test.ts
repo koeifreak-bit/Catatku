@@ -52,13 +52,22 @@ describe("scoreTouchdown on a 6-pair runway (TRISTAN's revision, 8 Nov 2026)", (
 });
 
 describe("shorter runways reject once their markings run out", () => {
-  it("4 pairs (LDA 1500–2400 m): reject past 622.5 m", () => {
-    expect(scoreTouchdown(ft(620), 6185, cfg)).toMatchObject({ points: 0, action: "none" });
-    expect(scoreTouchdown(ft(630), 6185, cfg)).toMatchObject({ points: -200, action: "reject" });
+  it("4 pairs (1500–2400 m): −200 past 622.5 m, but no reject (runway < 2500 m)", () => {
+    expect(scoreTouchdown(ft(620), ft(2000), cfg)).toMatchObject({ points: 0, action: "none" });
+    expect(scoreTouchdown(ft(630), ft(2000), cfg)).toMatchObject({ points: -200, action: "none" });
   });
-  it("3 pairs (LDA 1200–1500 m): 450 m is fine, 480 m is rejected", () => {
+  it("3 pairs (1200–1500 m): 450 m is fine, 480 m is −200 without reject", () => {
     expect(scoreTouchdown(ft(450), ft(1400), cfg)).toMatchObject({ points: 50, action: "none" });
-    expect(scoreTouchdown(ft(480), ft(1400), cfg)).toMatchObject({ points: -200, action: "reject" });
+    expect(scoreTouchdown(ft(480), ft(1400), cfg)).toMatchObject({ points: -200, action: "none" });
+  });
+  it("2400–2500 m runway: 6 pairs, −200 past 922.5 m but no reject", () => {
+    expect(scoreTouchdown(ft(950), ft(2450), cfg)).toMatchObject({ tdzEndM: 922.5, points: -200, action: "none" });
+  });
+  it("2500 m and longer: −200 and reject past 922.5 m", () => {
+    expect(scoreTouchdown(ft(950), ft(2500), cfg)).toMatchObject({ points: -200, action: "reject" });
+  });
+  it("unknown runway length: long-runway rules (reject)", () => {
+    expect(scoreTouchdown(ft(950), null, cfg)).toMatchObject({ points: -200, action: "reject" });
   });
 });
 

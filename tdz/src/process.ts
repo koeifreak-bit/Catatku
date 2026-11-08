@@ -97,6 +97,9 @@ export async function processPirep(
       `**Touchdown zone:** ${distM} m from the start of ${runway ?? "the runway"} ` +
       `(TDZ markings end at ${Math.round(score.tdzEndM)} m) → ${score.label}, ${fmt(score.points)} pts.` +
       (score.action === "reject" ? " Landed beyond the touchdown zone: PIREP rejected." : "") +
+      (score.label === cfg.beyond.label && score.action === "none"
+        ? ` Landed beyond the touchdown zone; runway under ${cfg.noRejectBelowRunwayM} m, so the PIREP is not rejected.`
+        : "") +
       (score.action === "review" ? " Touchdown before the threshold, flagged for staff review." : "");
 
     const willReject = score.action === "reject" && pirep.status !== "rejected";

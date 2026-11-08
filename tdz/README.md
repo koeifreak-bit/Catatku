@@ -10,7 +10,8 @@ landing was past the touchdown zone. See [SPEC.md](SPEC.md) for the rules.
 | 300 – 400 m (aiming point) | **+100** | — |
 | 400 – 600 m | **+50** | — |
 | 600 m – end of last TDZ marking | 0 | — |
-| past the last TDZ marking | **−200** | **PIREP rejected** |
+| past the last TDZ marking, runway ≥ 2500 m | **−200** | **PIREP rejected** |
+| past the last TDZ marking, runway < 2500 m | **−200** | not rejected |
 | before the threshold | 0 | flagged for staff review |
 
 The TDZ ends at the far end of the last ICAO touchdown-zone marking (Annex 14). The number of marking pairs depends on
