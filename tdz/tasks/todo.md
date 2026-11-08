@@ -4,4 +4,4 @@
 - [x] T4 Worker entry and cron: `src/index.ts`, `wrangler.jsonc`. Verify: typecheck, local dry-run against the live API
 - [x] T5 Deploy docs: `tdz/README.md`. Verify: manual read-through
 - [x] T6a Deployed to https://vamsys-tdz.koeifreak.workers.dev (dry run, 8 Nov 2026)
-- [ ] T6b (needs TRISTAN) Then a single live test on a chosen PIREP, then turn dry-run off
+- [x] T6b Live test on 4111096 passed; DRY_RUN=false since 8 Nov 2026 (v5 rule)
