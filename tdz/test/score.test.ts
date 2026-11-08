@@ -31,7 +31,9 @@ describe("tdzEnd: end of the last ICAO TDZ marking", () => {
 describe("scoreTouchdown on a 6-pair runway (TRISTAN's revision, 8 Nov 2026)", () => {
   it.each([
     [0, 0, "none"],
-    [299.9, 0, "none"],
+    [279.9, 0, "none"],
+    [280, 100, "none"],
+    [299.9, 100, "none"],
     [300, 100, "none"],
     [399.9, 100, "none"],
     [400, 100, "none"], // aiming point marking itself
@@ -77,7 +79,7 @@ describe("real IJV PIREPs (runway length = distance + vAMSYS lda)", () => {
   it.each([
     ["GIA162 WIEE RW33", 1954, 7888, 15, "none"], // 596 m on a 3000 m runway
     ["CTV970 RW16", 1196, 6185, 100, "none"], // 365 m
-    ["GIA604 RW26", 968, 7754, 0, "none"], // 295 m
+    ["GIA604 RW26", 968, 7754, 100, "none"], // 295 m: inside 280–460 m
     ["GIA407 WIII RW06", 2087, 7754.4, 0, "none"], // 636 m on 3000 m: was wrongly rejected
     ["CTV350 WAAA RW21 (903 m)", 2963, 7208.9, 0, "none"], // inside the 922.5 m box
     ["CTV350 WAAA RW21 (995 m)", 3264, 6900, -200, "reject"], // past the last marking
