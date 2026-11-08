@@ -8,6 +8,12 @@ from openpyxl.utils import get_column_letter
 
 OUT = "/home/user/Catatku/tdz/reports/IJV-landing-stats-2026-09-16_2026-11-08.xlsx"
 rows = [r for r in json.load(open("rows.json")) if "dist" in r]
+_pid = {p["id"]: p["pilot_id"] for p in json.load(open("list.json"))}
+_pil = {int(k): v for k, v in json.load(open("pilots.json")).items()}
+def pilot_label(r):
+    p = _pil.get(_pid.get(r["id"]), {})
+    return f'{p.get("username") or "?"} {(p.get("name") or "").strip()}'.strip()
+for r in rows: r["pilot"] = pilot_label(r)
 F = "Arial"
 H = Font(name=F, bold=True, color="FFFFFF"); HF = PatternFill("solid", fgColor="1F4E78")
 B = Font(name=F); BB = Font(name=F, bold=True)
@@ -25,17 +31,17 @@ wb = Workbook()
 # ---------------- Data ----------------
 d = wb.active; d.title = "Data"
 cols = ["PIREP ID", "Fleet", "Type code", "Maker", "Period", "Touchdown (m from runway start)", "TDZ end (m)",
-        "Within TDZ", "290–500 m", "Violation (past TDZ)", "Airbus flap data", "Airbus CONF 3", "Engine data", "Single-engine taxi-in"]
+        "Within TDZ", "290–500 m", "Violation (past TDZ)", "Airbus flap data", "Airbus CONF 3", "Engine data", "Single-engine taxi-in", "Pilot", "300–400 m (aiming point)"]
 header(d, 1, cols)
 for i, r in enumerate(sorted(rows, key=lambda r: r["id"]), 2):
     ab = r["maker"] == "Airbus" and bool(r.get("flaps"))
     vals = [r["id"], r["fleet"], r["code"], r["maker"], r["period"], round(r["dist"], 1), r["end"],
             int(r["within"]), int(r["band"]), int(r["beyond"]), int(ab), int(ab and r["flaps"] == "3"),
-            int(bool(r.get("has_engine_data")) and r["maker"] in ("Airbus", "Boeing")), int(bool(r.get("seti")) and r["maker"] in ("Airbus", "Boeing"))]
+            int(bool(r.get("has_engine_data")) and r["maker"] in ("Airbus", "Boeing")), int(bool(r.get("seti")) and r["maker"] in ("Airbus", "Boeing")), r["pilot"], int(300 <= r["dist"] < 400)]
     for j, v in enumerate(vals, 1): d.cell(i, j, v).font = B
 N = len(rows) + 1
-for j, w in enumerate([11, 30, 10, 9, 15, 16, 11, 10, 10, 12, 11, 11, 10, 13], 1): d.column_dimensions[get_column_letter(j)].width = w
-d.freeze_panes = "A2"; d.auto_filter.ref = f"A1:N{N}"
+for j, w in enumerate([11, 30, 10, 9, 15, 16, 11, 10, 10, 12, 11, 11, 10, 13, 26, 12], 1): d.column_dimensions[get_column_letter(j)].width = w
+d.freeze_panes = "A2"; d.auto_filter.ref = f"A1:P{N}"
 rng = lambda col: f"Data!${col}$2:${col}${N}"
 
 # ---------------- TDZ by Fleet ----------------
@@ -157,6 +163,33 @@ o.cell(olast + 2, 1, "B737-500 fleets mostly have no engine on/off events in the
 o.add_chart(bar("Single-engine taxi-in rate by fleet", "% of flights", Reference(o, min_col=1, min_row=4, max_row=olast),
                 [Reference(o, min_col=8, min_row=3, max_row=olast)], "J3", pct=True), "J3")
 
+# ---------------- Pilots ----------------
+pp = wb.create_sheet("Pilots")
+pp["A1"] = "Pilot leaderboard: touchdown zone and green ops, 16 Sep – 8 Nov 2026"; pp["A1"].font = Font(name=F, bold=True, size=14)
+pp["A2"] = "Sorted by number of landings. Use the filter arrows to sort by any column. Small samples (few landings) swing percentages a lot."; pp["A2"].font = Font(name=F, italic=True, color="595959")
+header(pp, 4, ["Pilot", "Landings", "290–500 m", "290–500 m %", "300–400 m (aiming pt)", "TDZ violations", "Airbus landings", "CONF 3", "CONF 3 %", "Flights (engine data)", "Single-engine taxi-in", "SETI %"])
+plist = [p for p, _ in Counter(r["pilot"] for r in rows).most_common()]
+for i, pname in enumerate(plist, 5):
+    pp.cell(i, 1, pname)
+    pp.cell(i, 2, f'=COUNTIFS({rng("O")},$A{i})')
+    pp.cell(i, 3, f'=COUNTIFS({rng("O")},$A{i},{rng("I")},1)')
+    pp.cell(i, 4, f'=IFERROR(C{i}/B{i},0)')
+    pp.cell(i, 5, f'=COUNTIFS({rng("O")},$A{i},{rng("P")},1)')
+    pp.cell(i, 6, f'=COUNTIFS({rng("O")},$A{i},{rng("J")},1)')
+    pp.cell(i, 7, f'=COUNTIFS({rng("O")},$A{i},{rng("K")},1)')
+    pp.cell(i, 8, f'=COUNTIFS({rng("O")},$A{i},{rng("L")},1)')
+    pp.cell(i, 9, f'=IF(G{i}=0,"–",H{i}/G{i})')
+    pp.cell(i, 10, f'=COUNTIFS({rng("O")},$A{i},{rng("M")},1)')
+    pp.cell(i, 11, f'=COUNTIFS({rng("O")},$A{i},{rng("N")},1)')
+    pp.cell(i, 12, f'=IF(J{i}=0,"–",K{i}/J{i})')
+    for c in (4, 9, 12): pp.cell(i, c).number_format = "0%"
+plast = 4 + len(plist)
+body(pp, 5, plast, 12)
+pp.column_dimensions["A"].width = 30
+for c in range(2, 13): pp.column_dimensions[get_column_letter(c)].width = 12
+pp.row_dimensions[4].height = 32
+pp.freeze_panes = "B5"; pp.auto_filter.ref = f"A4:L{plast}"
+
 # ---------------- Notes ----------------
 n = wb.create_sheet("Notes")
 notes = [
@@ -180,6 +213,6 @@ n.column_dimensions["A"].width = 130
 for ws in (t, m, o):
     ws.page_setup.orientation = "landscape"; ws.page_setup.fitToWidth = 1; ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-wb.move_sheet("Notes", offset=-4)
+wb.move_sheet("Notes", offset=-5)
 wb.active = 1
 wb.save(OUT); print(OUT, "fleets", len(fleets), "big", big - 4)
