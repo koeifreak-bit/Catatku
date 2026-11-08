@@ -7,8 +7,8 @@ landing was past the touchdown zone. See [SPEC.md](SPEC.md) for the rules.
 | Touchdown distance from runway start | Points | Action |
 |---|---|---|
 | 0 – 300 m | 0 | — |
-| 300 – 400 m (aiming point) | **+100** | — |
-| 400 – 600 m | **+50** | — |
+| 300 – 460 m (300 m marking pair through the end of the aiming point) | **+100** | — |
+| 460 – 600 m | **+50** | — |
 | 600 m – end of last TDZ marking | 0 | — |
 | past the last TDZ marking, runway ≥ 2500 m | **−200** | **PIREP rejected** |
 | past the last TDZ marking, runway < 2500 m | **−200** | not rejected |

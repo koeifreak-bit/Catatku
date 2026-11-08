@@ -34,7 +34,9 @@ describe("scoreTouchdown on a 6-pair runway (TRISTAN's revision, 8 Nov 2026)", (
     [299.9, 0, "none"],
     [300, 100, "none"],
     [399.9, 100, "none"],
-    [400, 50, "none"],
+    [400, 100, "none"], // aiming point marking itself
+    [459.9, 100, "none"],
+    [460, 50, "none"],
     [599.9, 50, "none"],
     [600, 0, "none"],
     [609.6, 0, "none"], // 2000 ft is NOT a reject
@@ -56,8 +58,8 @@ describe("shorter runways reject once their markings run out", () => {
     expect(scoreTouchdown(ft(620), ft(2000), cfg)).toMatchObject({ points: 0, action: "none" });
     expect(scoreTouchdown(ft(630), ft(2000), cfg)).toMatchObject({ points: -200, action: "none" });
   });
-  it("3 pairs (1200–1500 m): 450 m is fine, 480 m is −200 without reject", () => {
-    expect(scoreTouchdown(ft(450), ft(1400), cfg)).toMatchObject({ points: 50, action: "none" });
+  it("3 pairs (1200–1500 m): 450 m is +100, 480 m is −200 without reject", () => {
+    expect(scoreTouchdown(ft(450), ft(1400), cfg)).toMatchObject({ points: 100, action: "none" });
     expect(scoreTouchdown(ft(480), ft(1400), cfg)).toMatchObject({ points: -200, action: "none" });
   });
   it("2400–2500 m runway: 6 pairs, −200 past 922.5 m but no reject", () => {

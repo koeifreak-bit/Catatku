@@ -35,7 +35,8 @@ export interface TdzConfig {
 export const DEFAULT_CONFIG: TdzConfig = {
   bands: [
     { untilM: 300, points: 0, label: "Early touchdown" },
-    { untilM: 400, points: 100, label: "Aiming point landing" },
+    // 300 m TDZ marking pair through the end of the aiming point (starts 400 m, up to 60 m long). TRISTAN, 8 Nov 2026.
+    { untilM: 460, points: 100, label: "Aiming point landing" },
     { untilM: 600, points: 50, label: "TDZ landing" },
   ],
   long: { points: 0, label: "Long landing" },
