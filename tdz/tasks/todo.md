@@ -1,0 +1,6 @@
+- [x] T1 Scoring: `src/score.ts`, `src/config.ts`, `test/score.test.ts`. Verify: `npm test`
+- [x] T2 API client: `src/vamsys.ts`. Verify: typecheck, plus a live read-only smoke test
+- [x] T3 Processor: `src/process.ts`, `test/process.test.ts`. Verify: `npm test`
+- [x] T4 Worker entry and cron: `src/index.ts`, `wrangler.jsonc`. Verify: typecheck, local dry-run against the live API
+- [x] T5 Deploy docs: `tdz/README.md`. Verify: manual read-through
+- [ ] T6 (needs TRISTAN) Deploy, then a single live test on a chosen PIREP, then turn dry-run off

@@ -1,6 +1,6 @@
 # Spec: vAMSYS Touchdown Zone (TDZ) Scoring
 
-Status: **DRAFT v4, awaiting approval** · Owner: VA staff (TRISTAN / VTSM)
+Status: **APPROVED v4** (8 Nov 2026) · Owner: VA staff (TRISTAN / VTSM)
 
 ## Objective
 
@@ -138,7 +138,7 @@ export function scoreTouchdown(distM: number, cfg: TdzConfig): Score {
 
 ## Open questions
 
-1. **Reject rate:** the rule would reject about 18 % of recent flights, mostly on short runways because of the LDA/3 cap. Keep it, or use a flat 900 m?
-2. **"Start" vs threshold:** vAMSYS measures `distance_from_start_ft` from the *runway start*. On runways with a displaced threshold, that slightly overstates the distance past the threshold. Accept this (it's simple and matches what pilots see in vAMSYS)?
+1. ~~Reject rate~~ **Decided:** keep min(900 m, LDA/3).
+2. ~~Start vs threshold~~ **Decided:** use vAMSYS `distance_from_start_ft` as-is.
 3. **First live write:** to confirm that bonus entries add to existing Rewards instead of replacing them, we test on one chosen PIREP before turning off dry-run.
 4. **Repository:** it should live in its own repo (e.g. `koeifreak-bit/vamsys-tdz`). For now it's in `Catatku/tdz/`.

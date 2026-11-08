@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vamsys-tdz",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  // Poll vAMSYS for new PIREPs every 5 minutes.
+  "triggers": { "crons": ["*/5 * * * *"] },
+  // Wrangler creates the KV namespace automatically on the first deploy.
+  "kv_namespaces": [{ "binding": "TDZ_KV" }],
+  "vars": {
+    // Set to "false" ONLY after the single-PIREP live test has been checked.
+    "DRY_RUN": "true"
+  }
+  // Secrets (never commit): wrangler secret put VAMSYS_CLIENT_ID / VAMSYS_CLIENT_SECRET / ADMIN_TOKEN
+}
