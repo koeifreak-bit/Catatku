@@ -182,12 +182,30 @@ describe("runCycle", () => {
     expect(r.map((x) => x.outcome)).toEqual(["scored"]);
   });
 
-  it("removes its old TDZ entry when a re-score earns 0 points, keeping others", async () => {
+  it("replaces its old TDZ entry with a 0-point one when a re-score earns 0, keeping others", async () => {
     api.pireps = [pirep(9)];
     api.touchdowns.set(9, [td(968)]); // 295 m → 0 under the current rule
-    api.bonus.set(9, [{ name: "TDZ: TDZ landing (295 m, RW26)", points: 50 }, { name: "Rank bonus", points: 10 }]);
+    api.bonus.set(9, [{ name: "TDZ: TDZ landing (295 m, RW25R)", points: 50 }, { name: "Rank bonus", points: 10 }]);
     await processPirep(api, store, api.pireps[0]!, cfg, { ...live, force: true });
-    expect(api.bonus.get(9)).toEqual([{ name: "Rank bonus", points: 10 }]);
+    expect(api.bonus.get(9)).toEqual([{ name: "Rank bonus", points: 10 }, { name: "TDZ: Early touchdown (295 m, RW25R)", points: 0 }]);
+  });
+
+  it("never sends an empty bonus list (vAMSYS answers 422)", async () => {
+    api.pireps = [pirep(13)];
+    api.touchdowns.set(13, [td(968)]);
+    api.bonus.set(13, [{ name: "TDZ: TDZ landing (295 m, RW25R)", points: 50 }]);
+    const put = api.putBonusPoints.bind(api);
+    api.putBonusPoints = async (id, e) => { if (!e.length) throw new Error("422 points required"); return put(id, e); };
+    const r = await processPirep(api, store, api.pireps[0]!, cfg, { ...live, force: true });
+    expect(r.outcome).toBe("scored");
+    expect(api.bonus.get(13)).toEqual([{ name: "TDZ: Early touchdown (295 m, RW25R)", points: 0 }]);
+  });
+
+  it("does not write bonus points for a 0-point result on a fresh PIREP", async () => {
+    api.pireps = [pirep(14)];
+    api.touchdowns.set(14, [td(2000)]); // 610 m → 0
+    await processPirep(api, store, api.pireps[0]!, cfg, live);
+    expect(api.calls).toEqual(["comment:14"]);
   });
 
   it("treats vAMSYS lda as runway remaining (real WIII case: 636 m on 3000 m is not rejected)", async () => {

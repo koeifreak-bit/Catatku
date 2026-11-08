@@ -86,7 +86,10 @@ export async function processPirep(
 
     const detail = await api.getPirep(pirep.id);
     const { others: entries, hadOwn } = existingBonusEntries(detail.pirep_data, cfg.entryPrefix);
-    if (score.points !== 0) {
+    // vAMSYS rejects an empty bonus list (422), so when a re-score has to replace our old entry
+    // with a 0-point result we write a 0-point TDZ entry instead of removing it.
+    const writeBonus = score.points !== 0 || hadOwn;
+    if (writeBonus) {
       entries.push({ name: `${cfg.entryPrefix} ${score.label} (${distM} m, ${runway ?? "rwy ?"})`, points: score.points });
     }
 
@@ -100,7 +103,7 @@ export async function processPirep(
 
     if (!opts.dryRun) {
       // Write when we add an entry, or when a re-score must remove our old one.
-      if (score.points !== 0 || hadOwn) await api.putBonusPoints(pirep.id, entries);
+      if (writeBonus) await api.putBonusPoints(pirep.id, entries);
       await api.addComment(pirep.id, comment);
       if (willReject) await api.reject(pirep.id);
     }
