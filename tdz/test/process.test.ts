@@ -232,10 +232,10 @@ describe("runCycle", () => {
     expect(first.map((r) => r.reason)).toEqual(["no touchdown data"]);
     expect(store.m.has("done:live:101")).toBe(false);
 
-    api.touchdowns.set(101, [td(1770, 9842)]); // 539 m → +50
+    api.touchdowns.set(101, [td(1770, 9842)]); // 539 m → +15
     const second = await runCycle(api, store, cfg, live);
-    expect(second).toMatchObject([{ pirepId: 101, outcome: "scored", score: { points: 50 } }]);
-    expect(api.bonus.get(101)).toEqual([{ name: "TDZ: TDZ landing (539 m, RW25R)", points: 50 }]);
+    expect(second).toMatchObject([{ pirepId: 101, outcome: "scored", score: { points: 15 } }]);
+    expect(api.bonus.get(101)).toEqual([{ name: "TDZ: TDZ landing (539 m, RW25R)", points: 15 }]);
     expect(JSON.parse(store.m.get("waitingForTouchdown")!)).toEqual([]);
     expect(await runCycle(api, store, cfg, live)).toEqual([]); // nothing left, no double scoring
   });

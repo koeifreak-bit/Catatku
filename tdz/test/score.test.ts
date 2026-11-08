@@ -36,8 +36,8 @@ describe("scoreTouchdown on a 6-pair runway (TRISTAN's revision, 8 Nov 2026)", (
     [399.9, 100, "none"],
     [400, 100, "none"], // aiming point marking itself
     [459.9, 100, "none"],
-    [460, 50, "none"],
-    [599.9, 50, "none"],
+    [460, 15, "none"],
+    [599.9, 15, "none"],
     [600, 0, "none"],
     [609.6, 0, "none"], // 2000 ft is NOT a reject
     [900, 0, "none"],
@@ -75,7 +75,7 @@ describe("shorter runways reject once their markings run out", () => {
 
 describe("real IJV PIREPs (runway length = distance + vAMSYS lda)", () => {
   it.each([
-    ["GIA162 WIEE RW33", 1954, 7888, 50, "none"], // 596 m on a 3000 m runway
+    ["GIA162 WIEE RW33", 1954, 7888, 15, "none"], // 596 m on a 3000 m runway
     ["CTV970 RW16", 1196, 6185, 100, "none"], // 365 m
     ["GIA604 RW26", 968, 7754, 0, "none"], // 295 m
     ["GIA407 WIII RW06", 2087, 7754.4, 0, "none"], // 636 m on 3000 m: was wrongly rejected

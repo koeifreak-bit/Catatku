@@ -17,7 +17,7 @@ No paid hosting, no PHP, and no Discord.
 |---|---|---|
 | 0 – 300 m | 0 | — |
 | 300 – 460 m (300 m marking pair through the end of the aiming point) | **+100** | — |
-| 460 – 600 m | **+50** | — |
+| 460 – 600 m | **+15** | — |
 | 600 m – end of last TDZ marking | 0 | — |
 | past the last TDZ marking, runway ≥ 2500 m | **−200** | **PIREP rejected** |
 | past the last TDZ marking, runway < 2500 m | **−200** | not rejected |
