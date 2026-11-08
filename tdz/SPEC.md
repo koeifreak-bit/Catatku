@@ -1,6 +1,6 @@
 # Spec: vAMSYS Touchdown Zone (TDZ) Scoring
 
-Status: **DRAFT v3, awaiting approval** · Owner: VA staff (TRISTAN / VTSM)
+Status: **DRAFT v4, awaiting approval** · Owner: VA staff (TRISTAN / VTSM)
 
 ## Objective
 
@@ -118,8 +118,27 @@ export function scoreTouchdown(distM: number, cfg: TdzConfig): Score {
 4. Running it twice on the same PIREP changes nothing the second time.
 5. It costs $0 on the Cloudflare free tier.
 
+## Verified against live data (IJV, 8 Nov 2026, API client 1355)
+
+- `GET /pireps/{id}/touchdowns` **does** return single touchdowns too (the docs say otherwise). Example:
+  `{"runway":"RW33","lda":7888,"distance_from_start_ft":1954, ...}`. The same values are in `pirep_data.touchdowns[]`.
+  Some PIREPs have no touchdown data (runway/distance `null`). These are skipped, and no points are added.
+- Regular points live in `pirep_data.scores[]` (`name`, `points`). None of the last 100 PIREPs had a bonus, so bonus storage
+  hasn't been observed yet. TRISTAN reports TDZ points under *Rewards*, alongside other bonuses rather than replacing them.
+- Auth: OAuth client credentials with `client_id` / `client_secret` sent in the request body. Tokens last 24 h.
+- **What the current rule would have done to the last 40 PIREPs** (38 with data):
+
+  | Band | Count |
+  |---|---|
+  | 0–300 m +50 | 2 |
+  | 300–400 m +100 | 6 |
+  | 400–600 m +50 | 14 |
+  | 600 m–TDZ end −100 | 9 |
+  | beyond TDZ end −200 + **reject** | **7** (only 3 are past 900 m; the other 4 are on short runways where LDA/3 ≈ 630 m) |
+
 ## Open questions
 
-1. **Single-touchdown PIREPs:** where is `distance_from_start_ft` inside `pirep_data`? We'll confirm this with a live API call (the credential is now set up).
-2. **Bonus entries:** TRISTAN says TDZ points show under *Rewards* and don't overwrite other bonuses. This conflicts with the API docs ("replaces ALL"), so it will be verified on a test PIREP in dry-run before going live.
-3. **Repository:** it should live in its own repo (e.g. `koeifreak-bit/vamsys-tdz`), which needs to be created with the Claude GitHub App installed. For now it's in `Catatku/tdz/`.
+1. **Reject rate:** the rule would reject about 18 % of recent flights, mostly on short runways because of the LDA/3 cap. Keep it, or use a flat 900 m?
+2. **"Start" vs threshold:** vAMSYS measures `distance_from_start_ft` from the *runway start*. On runways with a displaced threshold, that slightly overstates the distance past the threshold. Accept this (it's simple and matches what pilots see in vAMSYS)?
+3. **First live write:** to confirm that bonus entries add to existing Rewards instead of replacing them, we test on one chosen PIREP before turning off dry-run.
+4. **Repository:** it should live in its own repo (e.g. `koeifreak-bit/vamsys-tdz`). For now it's in `Catatku/tdz/`.
