@@ -1,5 +1,6 @@
 import type { TdzConfig } from "./config";
 import { scoreTouchdown, type Score } from "./score";
+import { analyzeCda, CDA_CONFIG, describeCda, type CdaResult } from "./cda";
 import type { PirepSummary, PointEntry, VamsysPort } from "./vamsys";
 
 /** Subset of Workers KV we use (easy to fake in tests). */
@@ -24,6 +25,7 @@ export interface Result {
   dryRun: boolean;
   runway?: string | null;
   score?: Score;
+  cda?: CdaResult | null;
   bonusEntries?: PointEntry[];
   rejected?: boolean;
   comment?: string;
@@ -44,16 +46,17 @@ const doneKey = (id: number, dryRun: boolean) => `done:${dryRun ? "dry" : "live"
 
 const fmt = (n: number) => (n > 0 ? `+${n}` : String(n));
 
-/** Existing bonus entries (event, rank, activity...) minus our own, which gets re-added. */
-function existingBonusEntries(pirepData: Record<string, unknown> | null, prefix: string) {
+/** Existing bonus entries (event, rank, activity...) minus our own (TDZ, CDA), which get re-added. */
+function existingBonusEntries(pirepData: Record<string, unknown> | null, prefixes: string[]) {
   const raw = pirepData?.["bonus_scores"];
   const all = (Array.isArray(raw) ? raw : []).filter(
     (e): e is PointEntry => typeof e === "object" && e !== null && typeof (e as PointEntry).name === "string",
   );
   const others = all
-    .filter((e) => !e.name.startsWith(prefix))
+    .filter((e) => !prefixes.some((p) => e.name.startsWith(p)))
     .map(({ name, points, type, id }) => ({ name, points: Number(points), ...(type ? { type } : {}), ...(id ? { id } : {}) }));
-  return { others, hadOwn: others.length !== all.length };
+  const had = (p: string) => all.some((e) => e.name.startsWith(p));
+  return { others, had };
 }
 
 export async function processPirep(
@@ -91,13 +94,30 @@ export async function processPirep(
     const runway = td.runway;
 
     const detail = await api.getPirep(pirep.id);
-    const { others: entries, hadOwn } = existingBonusEntries(detail.pirep_data, cfg.entryPrefix);
+    const { others: entries, had } = existingBonusEntries(detail.pirep_data, [cfg.entryPrefix, CDA_CONFIG.entryPrefix]);
     // vAMSYS rejects an empty bonus list (422), so when a re-score has to replace our old entry
-    // with a 0-point result we write a 0-point TDZ entry instead of removing it.
-    const writeBonus = score.points !== 0 || hadOwn;
-    if (writeBonus) {
+    // with a 0-point result we write a 0-point entry instead of removing it.
+    const writeTdz = score.points !== 0 || had(cfg.entryPrefix);
+    if (writeTdz) {
       entries.push({ name: `${cfg.entryPrefix} ${score.label} (${distM} m, ${runway ?? "rwy ?"})`, points: score.points });
     }
+
+    // Continuous descent (CDA): a failure here never blocks the TDZ score.
+    let cda: CdaResult | null = null;
+    try {
+      cda = analyzeCda(await api.getPositionReports(pirep.id), CDA_CONFIG);
+    } catch {
+      cda = null;
+    }
+    const cdaPoints = cda?.continuous ? CDA_CONFIG.points : 0;
+    const writeCda = cdaPoints !== 0 || had(CDA_CONFIG.entryPrefix);
+    if (writeCda) {
+      entries.push({
+        name: `${CDA_CONFIG.entryPrefix} ${cda?.continuous ? CDA_CONFIG.label : "Descent with level-offs"}`,
+        points: cdaPoints,
+      });
+    }
+    const writeBonus = writeTdz || writeCda;
 
     const comment =
       `**Touchdown zone:** ${distM} m from the start of ${runway ?? "the runway"} ` +
@@ -106,7 +126,8 @@ export async function processPirep(
       (score.label === cfg.beyond.label && score.action === "none"
         ? ` Landed beyond the touchdown zone; runway under ${cfg.noRejectBelowRunwayM} m, so the PIREP is not rejected.`
         : "") +
-      (score.action === "review" ? " Touchdown before the threshold, flagged for staff review." : "");
+      (score.action === "review" ? " Touchdown before the threshold, flagged for staff review." : "") +
+      (cda ? `\n\n${describeCda(cda, CDA_CONFIG)}` : "");
 
     const willReject = score.action === "reject" && pirep.status !== "rejected";
 
@@ -117,7 +138,7 @@ export async function processPirep(
       if (willReject) await api.reject(pirep.id);
     }
 
-    return finish({ ...base, outcome: "scored", runway, score, bonusEntries: entries, rejected: willReject, comment });
+    return finish({ ...base, outcome: "scored", runway, score, cda, bonusEntries: entries, rejected: willReject, comment });
   } catch (err) {
     return finish({ ...base, outcome: "error", reason: err instanceof Error ? err.message : String(err) });
   }
@@ -163,7 +184,9 @@ export async function runCycle(
   // 1) Re-check PIREPs that had no touchdown data yet.
   const waiting = JSON.parse((await store.get("waitingForTouchdown")) ?? "[]") as Waiting[];
   const stillWaiting: Waiting[] = [];
-  for (const w of waiting) {
+  // At most 2 re-checks per run (request budget); the rest wait their turn without using up a try.
+  for (const w of waiting.slice(2)) stillWaiting.push(w);
+  for (const w of waiting.slice(0, 2)) {
     try {
       const pirep = await api.getPirep(w.id);
       const r = await processPirep(api, store, pirep, cfg, opts);

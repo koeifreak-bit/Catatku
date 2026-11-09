@@ -32,6 +32,8 @@ class FakeApi implements VamsysPort {
     return { id: aircraftId, fleet_id: fleetId, registration: "PK-TST", hide_in_phoenix: false, internal_remarks: null };
   }
   async updateAircraft() {}
+  positions = new Map<number, { altitude: number; phase: number; created_at: string }[]>();
+  async getPositionReports(id: number) { return this.positions.get(id) ?? []; }
   async reject(id: number) { this.calls.push(`reject:${id}`); const p = this.pireps.find((x) => x.id === id)!; p.status = "rejected"; }
 }
 
@@ -251,5 +253,35 @@ describe("runCycle", () => {
     for (let i = 0; i < MAX_TD_WAIT_CYCLES + 2; i++) await runCycle(api, store, cfg, live);
     expect(JSON.parse(store.m.get("waitingForTouchdown")!)).toEqual([]);
     expect(api.calls).toEqual([]);
+  });
+
+  it("CDA: +50 entry next to the TDZ one, comment explains; a later re-score without CDA leaves a 0 entry", async () => {
+    api.pireps = [pirep(20)];
+    api.touchdowns.set(20, [td(1150)]); // 351 m → +100
+    const t = (s: number) => new Date(Date.UTC(2026, 10, 9) + s * 1000).toISOString();
+    const smooth = Array.from({ length: 350 }, (_, i) => ({ altitude: 35000 - i * 100, phase: 6, created_at: t(i * 4) }));
+    api.positions.set(20, [...smooth, { altitude: 30, phase: 9, created_at: t(1500) }, { altitude: 30, phase: 9, created_at: t(1504) }]);
+    const r = await processPirep(api, store, api.pireps[0]!, cfg, live);
+    expect(api.bonus.get(20)).toEqual([
+      { name: "TDZ: Aiming point landing (351 m, RW25R)", points: 100 },
+      { name: "CDA: Continuous descent", points: 50 },
+    ]);
+    expect(r.comment).toContain("**Continuous descent:** no level-off");
+
+    api.positions.set(20, []); // e.g. data gone on a re-score
+    await processPirep(api, store, api.pireps[0]!, cfg, { ...live, force: true });
+    expect(api.bonus.get(20)).toEqual([
+      { name: "TDZ: Aiming point landing (351 m, RW25R)", points: 100 },
+      { name: "CDA: Descent with level-offs", points: 0 },
+    ]);
+  });
+
+  it("CDA lookup failing never blocks the TDZ score", async () => {
+    api.pireps = [pirep(21)];
+    api.touchdowns.set(21, [td(1150)]);
+    api.getPositionReports = async () => { throw new Error("500"); };
+    const r = await processPirep(api, store, api.pireps[0]!, cfg, live);
+    expect(r).toMatchObject({ outcome: "scored", cda: null });
+    expect(api.bonus.get(21)).toEqual([{ name: "TDZ: Aiming point landing (351 m, RW25R)", points: 100 }]);
   });
 });

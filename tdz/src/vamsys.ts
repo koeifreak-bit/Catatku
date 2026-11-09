@@ -60,6 +60,7 @@ export interface VamsysPort {
   addComment(id: number, comment: string): Promise<void>;
   reject(id: number): Promise<void>;
   getAircraft(fleetId: number, aircraftId: number): Promise<Aircraft>;
+  getPositionReports(id: number): Promise<{ altitude: number; phase: number; created_at: string }[]>;
   updateAircraft(fleetId: number, aircraftId: number, patch: AircraftPatch): Promise<void>;
 }
 
@@ -143,6 +144,14 @@ export class VamsysApi implements VamsysPort {
 
   async reject(id: number) {
     await this.request("POST", `/pireps/${id}/reject`);
+  }
+
+  async getPositionReports(id: number) {
+    const r = await this.request<{ altitude: number; phase: number; created_at: string }[] | { data: { altitude: number; phase: number; created_at: string }[] }>(
+      "GET",
+      `/pireps/${id}/position-reports`,
+    );
+    return Array.isArray(r) ? r : r.data;
   }
 
   async listFleets() {

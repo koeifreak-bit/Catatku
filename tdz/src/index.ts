@@ -67,9 +67,9 @@ async function cycle(env: Env, forceAog = false) {
   const client = api(env);
   const mxEvents: MxEvent[] = [];
   const mxOpts = { dryRun: isMxDryRun(env), heldElsewhere: heldByAog(env) };
-  // Cloudflare free plan: 50 outgoing requests per run. A PIREP costs up to ~6 (TDZ + maintenance), so take at most 5
-  // per run; the rest are picked up 5 minutes later.
-  const results = await runCycle(client, env.TDZ_KV, DEFAULT_CONFIG, { dryRun: isDryRun(env) }, 5, 1000, async (p) => {
+  // Cloudflare free plan: 50 outgoing requests per run. A PIREP costs up to ~8 (TDZ + CDA + maintenance), so take at
+  // most 4 per run; the rest are picked up 5 minutes later.
+  const results = await runCycle(client, env.TDZ_KV, DEFAULT_CONFIG, { dryRun: isDryRun(env) }, 4, 1000, async (p) => {
     const e = await onPirep(client, env.TDZ_KV, MX_CONFIG, p, mxOpts);
     if (e) mxEvents.push(e);
   });

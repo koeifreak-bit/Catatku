@@ -128,3 +128,16 @@ the answer lists `remaining`, so send the same request again.
 **On the web:** the `/aog` page has a **Park (AOG)** / **Unpark** button on every aircraft and a "Park several aircraft" box;
 the `/maintenance` page has **End maintenance** for aircraft in a check. No login (TRISTAN's choice), so anyone with the
 link can use them.
+
+## Continuous descent arrival (CDA) bonus
+
+Scored together with the TDZ (`src/cda.ts`), from the PIREP's vAMSYS position reports (one every ~4 s):
+
+- **Window:** top of descent (first report in the descent phase) down to **2,000 ft above the arrival field**
+  (field elevation = altitude right after touchdown, so high airports are fair).
+- **Broken by** any level segment (altitude within ±100 ft) lasting **more than 60 s**. Level flight below 2,000 ft AAL,
+  e.g. to intercept the glideslope, doesn't count.
+- **+50** bonus entry `CDA: Continuous descent`, no penalty. The PIREP comment lists any level-offs found.
+- If position reports are missing or the lookup fails, the TDZ is still scored and CDA is simply left out.
+
+On 12 recent IJV flights, 6 qualified.
