@@ -22,7 +22,10 @@ export interface TrackedAircraft {
   id: number;
   fleetId: number;
   registration: string;
+  /** Empty when vAMSYS has no hex code (not tracked by ADS-B, but still shown and maintained). */
   hex: string;
+  fleetCode?: string;
+  fleetName?: string;
 }
 
 export interface AdsbTarget {
@@ -42,6 +45,8 @@ export interface AogState {
   lastAirborne: Record<string, string>;
   /** aircraftId -> AOG period. */
   aog: Record<string, { since: string; lastFlown: string; wasHidden: boolean; applied: boolean; registration: string; fleetId: number }>;
+  /** Aircraft actually seen airborne at least once (others only have the tracking-start time). */
+  seen?: Record<string, 1>;
   /** Start of the current unbroken healthy-feed period. */
   feedHealthySince: string | null;
   lastPoll: string | null;
@@ -140,6 +145,7 @@ export async function pollAog(
     state.lastAirborne[k] ??= now.toISOString();
     const flying = flyingNow.get(a.id);
     if (flying) {
+      if (!state.seen?.[k]) (state.seen ??= {})[k] = 1;
       // Store with 1 h resolution to save KV writes.
       if (now.getTime() - new Date(state.lastAirborne[k]!).getTime() > 3600_000) state.lastAirborne[k] = now.toISOString();
       const held = state.aog[k];
@@ -174,10 +180,13 @@ export async function pollAog(
     }
   }
 
-  // lastPoll alone changing is not worth a KV write.
-  const { lastPoll: _a, ...b1 } = JSON.parse(before) as AogState;
+  // lastPoll alone changing is only worth a KV write once an hour.
+  const prev = JSON.parse(before) as AogState;
+  const { lastPoll: prevPoll, ...b1 } = prev;
   const { lastPoll: _b, ...b2 } = state;
-  if (JSON.stringify(b1) !== JSON.stringify(b2) || !raw) await store.put(KEY, JSON.stringify(state));
+  const pollStale = !prevPoll || now.getTime() - new Date(prevPoll).getTime() >= 3600_000;
+  if (JSON.stringify(b1) !== JSON.stringify(b2) || !raw || pollStale) await store.put(KEY, JSON.stringify(state));
+  else state.lastPoll = prevPoll;
   return events;
 }
 
@@ -186,16 +195,19 @@ export async function aogState(store: Store): Promise<AogState> {
   return raw ? JSON.parse(raw) : emptyState();
 }
 
-/** Aircraft list from vAMSYS (cached by the caller). */
+/** All non-historic aircraft from vAMSYS (cached by the caller). Those without hex are included but not ADS-B tracked. */
 export async function loadTrackedAircraft(
-  api: VamsysPort & { listFleets(): Promise<{ id: number }[]>; listAircraft(fleetId: number): Promise<{ id: number; fleet_id: number; registration: string; hexcode: string | null }[]> },
+  api: VamsysPort & {
+    listFleets(): Promise<{ id: number; code: string; name: string }[]>;
+    listAircraft(fleetId: number): Promise<{ id: number; fleet_id: number; registration: string; hexcode: string | null }[]>;
+  },
   excludedFleetIds: number[],
 ): Promise<TrackedAircraft[]> {
   const out: TrackedAircraft[] = [];
   for (const f of await api.listFleets()) {
     if (excludedFleetIds.includes(f.id)) continue;
     for (const a of await api.listAircraft(f.id)) {
-      if (a.hexcode) out.push({ id: a.id, fleetId: a.fleet_id ?? f.id, registration: a.registration, hex: a.hexcode.toLowerCase() });
+      out.push({ id: a.id, fleetId: a.fleet_id ?? f.id, registration: a.registration, hex: (a.hexcode ?? "").toLowerCase(), fleetCode: f.code, fleetName: f.name });
     }
   }
   return out;

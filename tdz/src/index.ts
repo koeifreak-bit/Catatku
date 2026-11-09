@@ -1,8 +1,9 @@
 import { DEFAULT_CONFIG } from "./config";
 import { processPirep, runCycle, type Result } from "./process";
 import { VamsysApi } from "./vamsys";
-import { activeList, inMaintenance, onPirep, releaseDue, type MxEvent } from "./maintenance";
+import { inMaintenance, loadState, onPirep, releaseDue, type MxEvent } from "./maintenance";
 import { AOG_CONFIG, MX_CONFIG } from "./maintenance-config";
+import { buildRows, renderPage } from "./status-page";
 import { AdsbLol, aogState, loadTrackedAircraft, pollAog, type AogEvent, type TrackedAircraft } from "./aog";
 
 export interface Env {
@@ -27,13 +28,13 @@ const heldByAog = (env: Env) => async (id: number) => Boolean((await aogState(en
 
 /** Aircraft list with hex codes, refreshed from vAMSYS once a day. */
 async function trackedAircraft(env: Env, client: VamsysApi): Promise<TrackedAircraft[]> {
-  const cached = await env.TDZ_KV.get("aog:aircraft");
+  const cached = await env.TDZ_KV.get("aog:aircraft:v2");
   if (cached) {
     const c = JSON.parse(cached) as { at: string; list: TrackedAircraft[] };
     if (Date.now() - new Date(c.at).getTime() < 86_400_000) return c.list;
   }
   const list = await loadTrackedAircraft(client, AOG_CONFIG.excludedFleetIds);
-  await env.TDZ_KV.put("aog:aircraft", JSON.stringify({ at: new Date().toISOString(), list }));
+  await env.TDZ_KV.put("aog:aircraft:v2", JSON.stringify({ at: new Date().toISOString(), list }));
   return list;
 }
 
@@ -118,28 +119,37 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === "/health") return json({ ok: true, dryRun: isDryRun(env), maintenanceDryRun: isMxDryRun(env), aogDryRun: isAogDryRun(env) });
 
-    // GET /aog: public list of aircraft declared AOG (real aircraft not flown for 3 days)
-    if (req.method === "GET" && url.pathname === "/aog") {
+    // GET /maintenance and /aog: public fleet status pages (HTML; ?format=json for JSON)
+    if (req.method === "GET" && (url.pathname === "/maintenance" || url.pathname === "/aog")) {
+      const client = api(env);
+      const aircraft = await trackedAircraft(env, client);
       const st = await aogState(env.TDZ_KV);
-      const now = Date.now();
-      return json({
-        dryRun: isAogDryRun(env),
-        lastPoll: st.lastPoll,
-        feedHealthySince: st.feedHealthySince,
-        tracked: Object.keys(st.lastAirborne).length,
-        aog: Object.values(st.aog).map((a) => ({ registration: a.registration, since: a.since, realAircraftLastFlown: a.lastFlown })),
-        idleOver2Days: Object.entries(st.lastAirborne).filter(([id, t]) => !st.aog[id] && now - new Date(t).getTime() > 2 * 86_400_000).length,
-      });
+      const mx = new Map<number, Awaited<ReturnType<typeof loadState>> & object>();
+      await Promise.all(
+        aircraft.map(async (a) => {
+          const m = await loadState(env.TDZ_KV, a.id);
+          if (m) mx.set(a.id, m);
+        }),
+      );
+      const focus = url.pathname === "/aog" ? "aog" : "maintenance";
+      let rows = buildRows(aircraft, mx, st, MX_CONFIG, AOG_CONFIG);
+      if (focus === "aog") {
+        // Problems first, then the longest-idle tracked aircraft, untracked last.
+        const rank = (r: (typeof rows)[number]) => (r.status !== "Available" ? 0 : r.tracked ? 1 : 2);
+        rows = [...rows].sort((a, b) => rank(a) - rank(b) || a.lastTs - b.lastTs);
+      }
+      if (url.searchParams.get("format") === "json") {
+        return json({ live: focus === "aog" ? !isAogDryRun(env) : !isMxDryRun(env), lastPoll: st.lastPoll, aircraft: rows });
+      }
+      const html = renderPage(
+        focus === "aog" ? "IJV fleet: AOG (real-world aircraft movement)" : "IJV fleet: maintenance status",
+        rows,
+        { live: focus === "aog" ? !isAogDryRun(env) : !isMxDryRun(env), lastPoll: st.lastPoll, aogDays: AOG_CONFIG.aogAfterDays },
+        focus,
+      );
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "max-age=60" } });
     }
 
-    // GET /maintenance: public list of aircraft currently in maintenance
-    if (req.method === "GET" && url.pathname === "/maintenance") {
-      const list = await activeList(env.TDZ_KV);
-      return json({
-        dryRun: isMxDryRun(env),
-        inMaintenance: list.map((a) => ({ registration: a.registration, reason: a.inMx!.reason, since: a.inMx!.from, until: a.inMx!.until })),
-      });
-    }
     if (!authorized(req, env)) return json({ error: "unauthorized" }, 401);
 
     // GET /recent: the last 100 results (dry-run and live)
