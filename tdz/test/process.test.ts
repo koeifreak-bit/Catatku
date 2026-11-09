@@ -28,6 +28,10 @@ class FakeApi implements VamsysPort {
   async getTouchdowns(id: number) { return this.touchdowns.get(id) ?? []; }
   async putBonusPoints(id: number, e: PointEntry[]) { this.calls.push(`bonus:${id}`); this.bonus.set(id, e); return e.reduce((s, x) => s + x.points, 0); }
   async addComment(id: number) { this.calls.push(`comment:${id}`); }
+  async getAircraft(fleetId: number, aircraftId: number) {
+    return { id: aircraftId, fleet_id: fleetId, registration: "PK-TST", hide_in_phoenix: false, internal_remarks: null };
+  }
+  async updateAircraft() {}
   async reject(id: number) { this.calls.push(`reject:${id}`); const p = this.pireps.find((x) => x.id === id)!; p.status = "rejected"; }
 }
 

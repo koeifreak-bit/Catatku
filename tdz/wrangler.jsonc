@@ -10,7 +10,9 @@
   "kv_namespaces": [{ "binding": "TDZ_KV", "id": "9fba588f2ae145149a6bba2f7c01c64f" }],
   "vars": {
     // Live since 8 Nov 2026 (single-PIREP test on 4111096 passed). "true" = score only, write nothing.
-    "DRY_RUN": "false"
+    "DRY_RUN": "false",
+    // Maintenance auto-hide: "true" = track and log only, never hide/show aircraft.
+    "MX_DRY_RUN": "true"
   }
   // Secrets (never commit): wrangler secret put VAMSYS_CLIENT_ID / VAMSYS_CLIENT_SECRET / ADMIN_TOKEN
 }

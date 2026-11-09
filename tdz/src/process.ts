@@ -136,6 +136,8 @@ export async function runCycle(
   opts: Options,
   maxPerRun = 100,
   maxScan = 1000,
+  /** Called once per new PIREP, when the poller moves past it (used by the maintenance module). */
+  onAdvance?: (p: PirepSummary) => Promise<void>,
 ): Promise<Result[]> {
   const lastSeen = Number((await store.get("lastSeenId")) ?? 0);
 
@@ -181,6 +183,13 @@ export async function runCycle(
       if (attempts < MAX_ATTEMPTS) break; // retry this PIREP next cycle
     }
     if (r.reason === NO_TD) stillWaiting.push({ id: p.id, tries: 0 });
+    if (onAdvance) {
+      try {
+        await onAdvance(p);
+      } catch (e) {
+        console.log(JSON.stringify({ onAdvanceError: String(e), pirepId: p.id }));
+      }
+    }
     await store.put("lastSeenId", String(p.id));
   }
   await store.put("waitingForTouchdown", JSON.stringify(stillWaiting));

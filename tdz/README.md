@@ -63,3 +63,29 @@ npm test
 npm run typecheck
 VAMSYS_CLIENT_ID=... VAMSYS_CLIENT_SECRET=... npx tsx scripts/dry-run.ts 20   # score recent PIREPs, no writes
 ```
+
+## Aircraft maintenance (auto-hide)
+
+The same Worker tracks each aircraft (registration) from its PIREPs and **hides it in Phoenix** while it is in
+maintenance, then shows it again when the check is over (`src/maintenance.ts`, numbers in `src/maintenance-config.ts`).
+
+| Trigger | Limit | Aircraft hidden for |
+|---|---|---|
+| A-check | every 50 flight hours or 40 cycles | 24 h |
+| C-check | every 500 flight hours or 400 cycles | 5 days |
+| Hard landing | worse than −600 fpm, or ≥ 2.0 g | 24 h |
+| Severe hard landing | worse than −800 fpm, or ≥ 2.3 g | 72 h |
+
+- Counters start from 0 at deployment and are kept per aircraft. A C-check also resets the A-check counter.
+- **Historic fleets are excluded**: MD-11, 747-200/-400, CRJ1000, all 737 Classics, the "Historical" A320-232 and 777-300ER,
+  A300, F28, RJ85, ATR 42-500 and ATR 72-500.
+- Hiding is immediate (existing bookings may still be flown, but no new ones can be made).
+- The aircraft's staff remarks get one `[MX-AUTO] …` line, which is removed again on release. Other remarks are untouched.
+  An aircraft staff had already hidden stays hidden afterwards.
+- `MX_DRY_RUN` = `true` (default): track and log only. Set it to `false` to really hide and show aircraft.
+
+| Route | What |
+|---|---|
+| `GET /maintenance` | public: aircraft currently in maintenance |
+| `GET /maintenance/log` | admin: last 200 maintenance events |
+| `POST /maintenance/:aircraftId/release` | admin: end a check early |

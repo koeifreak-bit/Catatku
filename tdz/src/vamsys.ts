@@ -9,6 +9,26 @@ export interface PirepSummary {
   type: string | null;
   callsign: string | null;
   bonus_sum: number | null;
+  aircraft_id?: number | null;
+  fleet_id?: number | null;
+  /** Airborne time in seconds. */
+  flight_length?: number | null;
+  /** Feet per minute, negative = descending. */
+  landing_rate?: number | null;
+  landing_g?: number | null;
+}
+
+export interface Aircraft {
+  id: number;
+  fleet_id: number;
+  registration: string;
+  hide_in_phoenix: boolean;
+  internal_remarks: string | null;
+}
+
+export interface AircraftPatch {
+  hide_in_phoenix?: boolean;
+  internal_remarks?: string | null;
 }
 
 export interface Touchdown {
@@ -39,6 +59,8 @@ export interface VamsysPort {
   putBonusPoints(id: number, entries: PointEntry[]): Promise<number>;
   addComment(id: number, comment: string): Promise<void>;
   reject(id: number): Promise<void>;
+  getAircraft(fleetId: number, aircraftId: number): Promise<Aircraft>;
+  updateAircraft(fleetId: number, aircraftId: number, patch: AircraftPatch): Promise<void>;
 }
 
 export class VamsysError extends Error {
@@ -121,5 +143,14 @@ export class VamsysApi implements VamsysPort {
 
   async reject(id: number) {
     await this.request("POST", `/pireps/${id}/reject`);
+  }
+
+  async getAircraft(fleetId: number, aircraftId: number) {
+    return (await this.request<{ data: Aircraft }>("GET", `/fleet/${fleetId}/aircraft/${aircraftId}`)).data;
+  }
+
+  /** Partial update: only the given fields change. */
+  async updateAircraft(fleetId: number, aircraftId: number, patch: AircraftPatch) {
+    await this.request("PUT", `/fleet/${fleetId}/aircraft/${aircraftId}`, patch);
   }
 }
