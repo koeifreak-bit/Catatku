@@ -111,3 +111,16 @@ is seen flying (`src/aog.ts`, settings in `src/maintenance-config.ts`).
 | `POST /run?aog=1` | admin: run a full cycle including an ADS-B check now |
 
 Flight data © adsb.lol contributors, ODbL.
+
+### Staff-declared AOG (parked / stored)
+
+For aircraft that are parked or stored in real life (e.g. per planespotters.net), staff can declare AOG immediately:
+
+```bash
+curl -X POST "https://vamsys-tdz.koeifreak.workers.dev/aog/park?regs=PK-GFH,GFG&note=planespotters%3A%20stored" -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -X POST "https://vamsys-tdz.koeifreak.workers.dev/aog/unpark?regs=PK-GFH" -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+Short registrations (`GFH`) work too. They are shown as **Parked (staff)** and only staff can lift it. If the real aircraft is
+seen flying on ADS-B, the page flags it ("consider unparking"). At most 12 aircraft per request (Cloudflare free-plan limit):
+the answer lists `remaining`, so send the same request again.

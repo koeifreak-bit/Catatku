@@ -28,11 +28,11 @@ const isAogDryRun = (env: Env) => env.AOG_DRY_RUN !== "false";
 const heldByAog = (env: Env) => async (id: number) => Boolean((await aogState(env.TDZ_KV)).aog[String(id)]);
 
 /** Aircraft list with hex codes, refreshed from vAMSYS once a day. */
-async function trackedAircraft(env: Env, client: VamsysApi): Promise<TrackedAircraft[]> {
+async function trackedAircraft(env: Env, client: VamsysApi, mayRefresh = true): Promise<TrackedAircraft[]> {
   const cached = await env.TDZ_KV.get("aog:aircraft:v2");
   if (cached) {
     const c = JSON.parse(cached) as { at: string; list: TrackedAircraft[] };
-    if (Date.now() - new Date(c.at).getTime() < 86_400_000) return c.list;
+    if (!mayRefresh || Date.now() - new Date(c.at).getTime() < 86_400_000) return c.list;
   }
   const list = await loadTrackedAircraft(client, AOG_CONFIG.excludedFleetIds);
   await env.TDZ_KV.put("aog:aircraft:v2", JSON.stringify({ at: new Date().toISOString(), list }));
@@ -46,8 +46,8 @@ async function rememberAog(env: Env, events: AogEvent[]) {
   await env.TDZ_KV.put("aog:log", JSON.stringify([...[...events].reverse(), ...prev].slice(0, 200)));
 }
 
-async function aogCycle(env: Env, client: VamsysApi) {
-  const events = await pollAog(client, new AdsbLol(), env.TDZ_KV, AOG_CONFIG, await trackedAircraft(env, client), {
+async function aogCycle(env: Env, client: VamsysApi, mayRefreshList = true) {
+  const events = await pollAog(client, new AdsbLol(), env.TDZ_KV, AOG_CONFIG, await trackedAircraft(env, client, mayRefreshList), {
     dryRun: isAogDryRun(env),
     inMaintenance: (id) => inMaintenance(env.TDZ_KV, id),
   });
@@ -67,7 +67,9 @@ async function cycle(env: Env, forceAog = false) {
   const client = api(env);
   const mxEvents: MxEvent[] = [];
   const mxOpts = { dryRun: isMxDryRun(env), heldElsewhere: heldByAog(env) };
-  const results = await runCycle(client, env.TDZ_KV, DEFAULT_CONFIG, { dryRun: isDryRun(env) }, 100, 1000, async (p) => {
+  // Cloudflare free plan: 50 outgoing requests per run. A PIREP costs up to ~6 (TDZ + maintenance), so take at most 5
+  // per run; the rest are picked up 5 minutes later.
+  const results = await runCycle(client, env.TDZ_KV, DEFAULT_CONFIG, { dryRun: isDryRun(env) }, 5, 1000, async (p) => {
     const e = await onPirep(client, env.TDZ_KV, MX_CONFIG, p, mxOpts);
     if (e) mxEvents.push(e);
   });
@@ -82,7 +84,8 @@ async function cycle(env: Env, forceAog = false) {
   let aogEvents: AogEvent[] = [];
   if (forceAog || Math.floor(new Date().getUTCMinutes() / 5) % 3 === 0) {
     try {
-      aogEvents = await aogCycle(env, client);
+      // The daily aircraft-list refresh costs ~20 requests: only do it on a quiet run.
+      aogEvents = await aogCycle(env, client, results.length === 0);
     } catch (e) {
       console.log(JSON.stringify({ aogError: String(e) }));
     }
