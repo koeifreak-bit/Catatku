@@ -117,7 +117,7 @@ export async function onPirep(
   store: Store,
   cfg: MxConfig,
   p: PirepSummary,
-  opts: { dryRun: boolean; now?: Date },
+  opts: { dryRun: boolean; now?: Date; heldElsewhere?: (id: number) => Promise<boolean> },
 ): Promise<MxEvent | null> {
   if (SKIP_STATUSES.has(p.status) || p.type === "claim") return null;
   if (!p.aircraft_id || !p.fleet_id || cfg.excludedFleetIds.includes(p.fleet_id)) return null;
@@ -162,7 +162,8 @@ export async function onPirep(
       from: now.toISOString(),
       until: until.toISOString(),
       pirepId: p.id,
-      wasHidden: ac.hide_in_phoenix,
+      // Hidden by AOG is not "hidden by staff".
+      wasHidden: ac.hide_in_phoenix && !((await opts.heldElsewhere?.(p.aircraft_id)) ?? false),
       applied: !opts.dryRun,
     };
   }
@@ -196,7 +197,7 @@ export async function releaseDue(
   api: VamsysPort,
   store: Store,
   cfg: MxConfig,
-  opts: { dryRun: boolean; now?: Date; force?: number[] },
+  opts: { dryRun: boolean; now?: Date; force?: number[]; heldElsewhere?: (id: number) => Promise<boolean> },
 ): Promise<MxEvent[]> {
   const now = opts.now ?? new Date();
   const events: MxEvent[] = [];
@@ -213,8 +214,9 @@ export async function releaseDue(
       // Only touch vAMSYS if we actually hid it (not a dry-run period) and we are live now.
       if (state.inMx.applied && !opts.dryRun) {
         const ac = await api.getAircraft(state.fleetId, id);
+        const stillHeld = (await opts.heldElsewhere?.(id)) ?? false; // e.g. AOG
         await api.updateAircraft(state.fleetId, id, {
-          hide_in_phoenix: state.inMx.wasHidden,
+          ...(stillHeld ? {} : { hide_in_phoenix: state.inMx.wasHidden }),
           internal_remarks: withTag(ac.internal_remarks, cfg.tag, null),
         });
       }
@@ -236,7 +238,7 @@ export async function releaseDue(
     delete state.inMx;
     await saveState(store, state);
   }
-  await store.put(ACTIVE, JSON.stringify(keep));
+  if (events.length) await store.put(ACTIVE, JSON.stringify(keep)); // only write when something changed
   return events;
 }
 
@@ -248,4 +250,10 @@ export async function activeList(store: Store): Promise<AircraftState[]> {
     if (s?.inMx) out.push(s);
   }
   return out.sort((a, b) => a.inMx!.until.localeCompare(b.inMx!.until));
+}
+
+/** Is this aircraft currently in maintenance? (used by the AOG module) */
+export async function inMaintenance(store: Store, id: number): Promise<boolean> {
+  const s = await loadState(store, id);
+  return Boolean(s?.inMx);
 }

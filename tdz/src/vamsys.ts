@@ -145,6 +145,19 @@ export class VamsysApi implements VamsysPort {
     await this.request("POST", `/pireps/${id}/reject`);
   }
 
+  async listFleets() {
+    return (await this.request<{ data: { id: number; code: string; name: string }[] }>("GET", `/fleet?page[size]=100`)).data;
+  }
+
+  async listAircraft(fleetId: number) {
+    return (
+      await this.request<{ data: { id: number; fleet_id: number; registration: string; hexcode: string | null }[] }>(
+        "GET",
+        `/fleet/${fleetId}/aircraft?page[size]=100`,
+      )
+    ).data;
+  }
+
   async getAircraft(fleetId: number, aircraftId: number) {
     return (await this.request<{ data: Aircraft }>("GET", `/fleet/${fleetId}/aircraft/${aircraftId}`)).data;
   }

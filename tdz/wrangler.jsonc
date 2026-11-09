@@ -12,7 +12,9 @@
     // Live since 8 Nov 2026 (single-PIREP test on 4111096 passed). "true" = score only, write nothing.
     "DRY_RUN": "false",
     // Maintenance auto-hide: "true" = track and log only, never hide/show aircraft.
-    "MX_DRY_RUN": "true"
+    "MX_DRY_RUN": "true",
+    // AOG from real-world ADS-B (adsb.lol): "true" = track and log only.
+    "AOG_DRY_RUN": "true"
   }
   // Secrets (never commit): wrangler secret put VAMSYS_CLIENT_ID / VAMSYS_CLIENT_SECRET / ADMIN_TOKEN
 }

@@ -192,6 +192,7 @@ export async function runCycle(
     }
     await store.put("lastSeenId", String(p.id));
   }
-  await store.put("waitingForTouchdown", JSON.stringify(stillWaiting));
+  // Only write when it changed (KV free tier: 1,000 writes/day).
+  if (JSON.stringify(stillWaiting) !== JSON.stringify(waiting)) await store.put("waitingForTouchdown", JSON.stringify(stillWaiting));
   return results;
 }

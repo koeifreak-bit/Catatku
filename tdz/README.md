@@ -89,3 +89,25 @@ maintenance, then shows it again when the check is over (`src/maintenance.ts`, n
 | `GET /maintenance` | public: aircraft currently in maintenance |
 | `GET /maintenance/log` | admin: last 200 maintenance events |
 | `POST /maintenance/:aircraftId/release` | admin: end a check early |
+
+## AOG from real-world aircraft movement
+
+Every 15 minutes the Worker asks the free ADS-B feed **adsb.lol** whether the **real** aircraft behind each IJV registration
+is airborne, using the ICAO hex code stored on the aircraft in vAMSYS (e.g. PK-GFF = `8a023e`). If the real aircraft has
+**not been seen flying for 3 days**, it is declared **AOG** and hidden in Phoenix. It is shown again as soon as the real aircraft
+is seen flying (`src/aog.ts`, settings in `src/maintenance-config.ts`).
+
+- Same historic-fleet exclusions as maintenance. Aircraft without a hex code in vAMSYS are not tracked.
+- Safety: nothing is declared AOG unless the feed has been healthy for 3 days in a row. A feed error, or the whole fleet
+  vanishing at once, counts as an outage and restarts that clock.
+- Works together with maintenance: an aircraft held by both is shown again only when both are over. Each module only
+  removes its own `[AOG-AUTO]` / `[MX-AUTO]` remark line.
+- `AOG_DRY_RUN` = `true` (default): track and log only.
+
+| Route | What |
+|---|---|
+| `GET /aog` | public: aircraft currently AOG, number tracked, feed status |
+| `GET /aog/log` | admin: last 200 AOG events |
+| `POST /run?aog=1` | admin: run a full cycle including an ADS-B check now |
+
+Flight data © adsb.lol contributors, ODbL.

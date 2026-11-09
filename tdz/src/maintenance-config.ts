@@ -1,3 +1,4 @@
+import type { AogConfig } from "./aog";
 import type { MxConfig } from "./maintenance";
 
 /**
@@ -24,4 +25,13 @@ export const MX_CONFIG: MxConfig = {
     { name: "Hard landing inspection", rateFpm: -600, g: 2.0, durationH: 24 },
   ],
   tag: "[MX-AUTO]",
+};
+
+/** AOG from real-world ADS-B movement (same historic-fleet exclusions). */
+export const AOG_CONFIG: AogConfig = {
+  aogAfterDays: 3,
+  excludedFleetIds: MX_CONFIG.excludedFleetIds,
+  tag: "[AOG-AUTO]",
+  feedHealthyForDays: 3,
+  minAirborneKts: 60,
 };
