@@ -124,3 +124,7 @@ curl -X POST "https://vamsys-tdz.koeifreak.workers.dev/aog/unpark?regs=PK-GFH" -
 Short registrations (`GFH`) work too. They are shown as **Parked (staff)** and only staff can lift it. If the real aircraft is
 seen flying on ADS-B, the page flags it ("consider unparking"). At most 12 aircraft per request (Cloudflare free-plan limit):
 the answer lists `remaining`, so send the same request again.
+
+**On the web:** the `/aog` page has a **Park (AOG)** / **Unpark** button on every aircraft and a "Park several aircraft" box;
+the `/maintenance` page has **End maintenance** for aircraft in a check. No login (TRISTAN's choice), so anyone with the
+link can use them.

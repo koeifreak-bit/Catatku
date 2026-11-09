@@ -151,19 +151,10 @@ export default {
         { live: focus === "aog" ? !isAogDryRun(env) : !isMxDryRun(env), lastPoll: st.lastPoll, aogDays: AOG_CONFIG.aogAfterDays },
         focus,
       );
-      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "max-age=60" } });
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
     }
 
-    if (!authorized(req, env)) return json({ error: "unauthorized" }, 401);
-
-    // GET /recent: the last 100 results (dry-run and live)
-    if (req.method === "GET" && url.pathname === "/recent") {
-      return json(JSON.parse((await env.TDZ_KV.get("recent")) ?? "[]"));
-    }
-
-    // POST /run: run one poll now
-    if (req.method === "POST" && url.pathname === "/run") return json(await cycle(env, url.searchParams.get("aog") === "1"));
-
+    // Open (no login, by TRISTAN's choice): park/unpark and ending maintenance, used by the status-page buttons.
     // POST /aog/park?regs=PK-GFH,GFG,...[&note=planespotters: stored]  and  POST /aog/unpark?regs=...
     const pk = url.pathname.match(/^\/aog\/(park|unpark)$/);
     if (req.method === "POST" && pk) {
@@ -194,14 +185,6 @@ export default {
       return json(summary);
     }
 
-    // GET /aog/log: last 200 AOG events
-    if (req.method === "GET" && url.pathname === "/aog/log") return json(JSON.parse((await env.TDZ_KV.get("aog:log")) ?? "[]"));
-
-    // GET /maintenance/log: last 200 maintenance events
-    if (req.method === "GET" && url.pathname === "/maintenance/log") {
-      return json(JSON.parse((await env.TDZ_KV.get("mx:log")) ?? "[]"));
-    }
-
     // POST /maintenance/:aircraftId/release: end a check early (staff)
     const rel = url.pathname.match(/^\/maintenance\/(\d+)\/release$/);
     if (req.method === "POST" && rel) {
@@ -219,6 +202,24 @@ export default {
       const r = await processPirep(client, env.TDZ_KV, pirep, DEFAULT_CONFIG, { dryRun: !live, force: true });
       await remember(env, [r]);
       return json(r);
+    }
+
+    if (!authorized(req, env)) return json({ error: "unauthorized" }, 401);
+
+    // GET /recent: the last 100 results (dry-run and live)
+    if (req.method === "GET" && url.pathname === "/recent") {
+      return json(JSON.parse((await env.TDZ_KV.get("recent")) ?? "[]"));
+    }
+
+    // POST /run: run one poll now
+    if (req.method === "POST" && url.pathname === "/run") return json(await cycle(env, url.searchParams.get("aog") === "1"));
+
+    // GET /aog/log: last 200 AOG events
+    if (req.method === "GET" && url.pathname === "/aog/log") return json(JSON.parse((await env.TDZ_KV.get("aog:log")) ?? "[]"));
+
+    // GET /maintenance/log: last 200 maintenance events
+    if (req.method === "GET" && url.pathname === "/maintenance/log") {
+      return json(JSON.parse((await env.TDZ_KV.get("mx:log")) ?? "[]"));
     }
 
     return json({ error: "not found" }, 404);

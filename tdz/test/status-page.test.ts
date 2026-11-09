@@ -24,4 +24,7 @@ it("lists every aircraft with its status, problems first", () => {
   const html = renderPage("t", rows, { live: true, lastPoll: "2026-11-12T11:45:00Z", aogDays: 3 }, "aog");
   expect(html).toContain("PK-GFF");
   expect(html).toContain("<b>1</b>available");
+  expect(html).toContain('data-act="park" data-reg="PK-GFF"');
+  const mxHtml = renderPage("t", rows, { live: true, lastPoll: null, aogDays: 3 }, "maintenance");
+  expect(mxHtml).toContain('data-act="release" data-id="3"');
 });
