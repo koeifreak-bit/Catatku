@@ -4,6 +4,7 @@ import { VamsysApi } from "./vamsys";
 import { inMaintenance, loadState, onPirep, releaseDue, type MxEvent } from "./maintenance";
 import { AOG_CONFIG, MX_CONFIG } from "./maintenance-config";
 import { buildRows, renderPage } from "./status-page";
+import { park, unpark } from "./aog";
 import { AdsbLol, aogState, loadTrackedAircraft, pollAog, type AogEvent, type TrackedAircraft } from "./aog";
 
 export interface Env {
@@ -159,6 +160,36 @@ export default {
 
     // POST /run: run one poll now
     if (req.method === "POST" && url.pathname === "/run") return json(await cycle(env, url.searchParams.get("aog") === "1"));
+
+    // POST /aog/park?regs=PK-GFH,GFG,...[&note=planespotters: stored]  and  POST /aog/unpark?regs=...
+    const pk = url.pathname.match(/^\/aog\/(park|unpark)$/);
+    if (req.method === "POST" && pk) {
+      // Registrations from ?regs=… or the body; a JSON body may also carry {regs, note, wasHidden: {"PK-X": true}}.
+      const bodyText = url.searchParams.get("regs") ? "" : await req.text();
+      let body: { regs?: string[] | string; note?: string; wasHidden?: Record<string, boolean> } = {};
+      try {
+        body = bodyText.trim().startsWith("{") ? JSON.parse(bodyText) : { regs: bodyText };
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const rawRegs = url.searchParams.get("regs") ?? (Array.isArray(body.regs) ? body.regs.join(",") : body.regs ?? "");
+      const regs = rawRegs.split(/[\s,;]+/).filter(Boolean);
+      if (!regs.length) return json({ error: "give registrations as ?regs=PK-AAA,PK-BBB or in the body" }, 400);
+      const client = api(env);
+      const list = await trackedAircraft(env, client);
+      const common = { dryRun: isAogDryRun(env), inMaintenance: (id: number) => inMaintenance(env.TDZ_KV, id) };
+      const r =
+        pk[1] === "park"
+          ? await park(client, env.TDZ_KV, AOG_CONFIG, list, regs, {
+              ...common,
+              note: url.searchParams.get("note") ?? body.note,
+              wasHiddenOverride: body.wasHidden,
+            })
+          : await unpark(client, env.TDZ_KV, AOG_CONFIG, list, regs, common);
+      await rememberAog(env, r.events);
+      const { events: _e, ...summary } = r;
+      return json(summary);
+    }
 
     // GET /aog/log: last 200 AOG events
     if (req.method === "GET" && url.pathname === "/aog/log") return json(JSON.parse((await env.TDZ_KV.get("aog:log")) ?? "[]"));

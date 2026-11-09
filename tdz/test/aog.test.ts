@@ -165,3 +165,62 @@ describe("AOG and maintenance together", () => {
     expect(api.aircraft.get(1)!.internal_remarks).not.toContain("[MX-AUTO]");
   });
 });
+
+describe("staff park / unpark (e.g. parked per planespotters)", () => {
+  const P = (regs: string[], o: Partial<{ dryRun: boolean; now: Date; note: string }> = {}) =>
+    import("../src/aog").then((m) => m.park(api as unknown as VamsysPort, store, cfg, list, regs, { dryRun: false, now: T0, ...o }));
+  const U = (regs: string[], now = d(1)) =>
+    import("../src/aog").then((m) => m.unpark(api as unknown as VamsysPort, store, cfg, list, regs, { dryRun: false, now }));
+  const list = [...fleet, { id: 50, fleetId: 19506, registration: "PK-PWM", hex: "" }, { id: 99, fleetId: MD11, registration: "PK-GIM", hex: "8a0999" }];
+
+  it("parks immediately (no 3-day wait), accepts short regs, reports unknown/historic", async () => {
+    const r = await P(["G1", "pk-g2", "PWM", "GPU", "GIM"], { note: "planespotters: stored" });
+    expect(r).toMatchObject({ parked: ["PK-G1", "PK-G2", "PK-PWM"], notFound: ["PK-GPU", "PK-GIM"], remaining: [] });
+    expect(api.aircraft.get(1)).toMatchObject({ hide_in_phoenix: true });
+    expect(api.aircraft.get(1)!.internal_remarks).toBe("[AOG-AUTO] Parked/stored, declared AOG by staff: planespotters: stored (since 2026-11-09)");
+    expect(api.aircraft.get(50)!.hide_in_phoenix).toBe(true); // works without hex code
+  });
+
+  it("a parked aircraft seen flying stays AOG (staff decide) but is flagged", async () => {
+    await poll(T0);
+    await P(["G1"]);
+    feed.flying.add(fleet[0]!.hex);
+    expect(await poll(d(0.5))).toEqual([]);
+    expect(api.aircraft.get(1)!.hide_in_phoenix).toBe(true);
+    expect((await aogState(store)).aog["1"]!.seenFlyingAt).toBeDefined();
+  });
+
+  it("unpark shows it again and gives a fresh 3-day ADS-B grace", async () => {
+    await poll(T0);
+    await P(["G1"]);
+    expect(await U(["G1", "G5"])).toMatchObject({ released: ["PK-G1"], notParked: ["PK-G5"] });
+    expect(api.aircraft.get(1)).toMatchObject({ hide_in_phoenix: false, internal_remarks: null });
+    expect(await poll(d(3.5))).toEqual([]); // grace runs from the unpark (d1), not tracking start
+    expect(await poll(d(4.05))).toMatchObject([{ kind: "aog", aircraftId: 1 }]);
+  });
+
+  it("parking twice is a no-op", async () => {
+    await P(["G1"]);
+    const n = api.updates.length;
+    expect(await P(["G1"])).toMatchObject({ parked: [], alreadyAog: ["PK-G1"] });
+    expect(api.updates.length).toBe(n);
+  });
+
+  it("does at most 12 per request and says what is left (Cloudflare 50-request limit)", async () => {
+    const regs = fleet.slice(0, 20).map((a) => a.registration);
+    const r = await P(regs);
+    expect(r.parked).toHaveLength(12);
+    expect(r.remaining).toEqual(regs.slice(12));
+    expect(Object.keys((await aogState(store)).aog)).toHaveLength(12);
+    expect((await P(r.remaining)).parked).toHaveLength(8);
+  });
+
+  it("wasHidden override: recover an interrupted run with the real original flags", async () => {
+    api.aircraft.set(1, { id: 1, fleet_id: B738, registration: "PK-G1", hide_in_phoenix: true, internal_remarks: "[AOG-AUTO] Parked…" });
+    api.aircraft.set(2, { id: 2, fleet_id: B738, registration: "PK-G2", hide_in_phoenix: true, internal_remarks: "[AOG-AUTO] Parked…" });
+    await import("../src/aog").then((m) => m.park(api as unknown as VamsysPort, store, cfg, list, ["G1", "G2"], { dryRun: false, now: T0, wasHiddenOverride: { "PK-G1": false, G2: true } }));
+    await U(["G1", "G2"]);
+    expect(api.aircraft.get(1)!.hide_in_phoenix).toBe(false); // we hid it: shown again
+    expect(api.aircraft.get(2)!.hide_in_phoenix).toBe(true); // staff had hidden it: stays hidden
+  });
+});

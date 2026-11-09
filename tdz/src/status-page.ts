@@ -5,7 +5,7 @@ import type { AircraftState, MxConfig } from "./maintenance";
 export interface Row {
   registration: string;
   fleet: string;
-  status: "Available" | "Maintenance" | "AOG" | "Maintenance + AOG";
+  status: "Available" | "Maintenance" | "AOG" | "Parked (staff)" | "Maintenance + AOG";
   detail: string;
   until?: string;
   nextCheck: string;
@@ -29,12 +29,15 @@ export function buildRows(aircraft: TrackedAircraft[], mx: Map<number, AircraftS
       const m = mx.get(ac.id);
       const g = aog.aog[String(ac.id)];
       const inMx = Boolean(m?.inMx);
-      const status: Row["status"] = inMx && g ? "Maintenance + AOG" : inMx ? "Maintenance" : g ? "AOG" : "Available";
+      const status: Row["status"] = inMx && g ? "Maintenance + AOG" : inMx ? "Maintenance" : g?.manual ? "Parked (staff)" : g ? "AOG" : "Available";
       const since = m?.since[a.name] ?? { hours: 0, cycles: 0 };
       const last = aog.lastAirborne[String(ac.id)];
       const details: string[] = [];
       if (inMx) details.push(m!.inMx!.reason);
-      if (g) details.push(`Real aircraft not flown since ${g.lastFlown.slice(0, 10)}`);
+      if (g?.manual) {
+        details.push(`Declared AOG by staff since ${g.since.slice(0, 10)}${g.note ? `: ${g.note}` : ""}`);
+        if (g.seenFlyingAt) details.push(`⚠ real aircraft seen flying ${fmt(g.seenFlyingAt)}, consider unparking`);
+      } else if (g) details.push(`Real aircraft not flown since ${g.lastFlown.slice(0, 10)}`);
       return {
         registration: ac.registration,
         fleet: ac.fleetCode ? `${ac.fleetCode} – ${ac.fleetName ?? ""}` : String(ac.fleetId),
@@ -55,8 +58,8 @@ export function buildRows(aircraft: TrackedAircraft[], mx: Map<number, AircraftS
 }
 
 export function renderPage(title: string, rows: Row[], meta: { live: boolean; lastPoll: string | null; aogDays: number }, focus: "maintenance" | "aog"): string {
-  const counts = { mx: rows.filter((r) => r.status.includes("Maintenance")).length, aog: rows.filter((r) => r.status.includes("AOG")).length };
-  const badge = (s: Row["status"]) => `<span class="b ${s === "Available" ? "ok" : s === "AOG" ? "aog" : "mx"}">${esc(s)}</span>`;
+  const counts = { mx: rows.filter((r) => r.status.includes("Maintenance")).length, aog: rows.filter((r) => r.status.includes("AOG") || r.status === "Parked (staff)").length };
+  const badge = (s: Row["status"]) => `<span class="b ${s === "Available" ? "ok" : s === "AOG" || s === "Parked (staff)" ? "aog" : "mx"}">${esc(s)}</span>`;
   const body = rows
     .map(
       (r) => `<tr><td><b>${esc(r.registration)}</b></td><td>${esc(r.fleet)}</td><td>${badge(r.status)}</td><td>${esc(r.detail || "")}${r.until ? `<br><small>until ${fmt(r.until)}</small>` : ""}</td><td>${esc(focus === "aog" ? r.realLastFlown : r.nextCheck)}</td><td>${esc(focus === "aog" ? r.nextCheck : r.realLastFlown)}</td></tr>`,
@@ -78,7 +81,7 @@ small{color:var(--mut)}</style></head><body><main>
 <nav><a href="/maintenance">Maintenance</a><a href="/aog">AOG</a></nav>
 <h1>${esc(title)}</h1>
 <p class="m">${meta.live ? "Live" : "Test mode (nothing is hidden)"} · ${rows.length} aircraft (historic fleets excluded) · ADS-B last checked ${fmt(meta.lastPoll)} · AOG after ${meta.aogDays} days without a real flight</p>
-<div class="cards"><div class="c"><b>${rows.filter((r) => r.status === "Available").length}</b>available</div><div class="c"><b>${counts.mx}</b>in maintenance</div><div class="c"><b>${counts.aog}</b>AOG</div><div class="c"><b>${rows.filter((r) => !r.tracked).length}</b>without hex code</div></div>
+<div class="cards"><div class="c"><b>${rows.filter((r) => r.status === "Available").length}</b>available</div><div class="c"><b>${counts.mx}</b>in maintenance</div><div class="c"><b>${counts.aog}</b>AOG / parked</div><div class="c"><b>${rows.filter((r) => !r.tracked).length}</b>without hex code</div></div>
 <input id="q" placeholder="Filter: registration, type, status…" oninput="for(const r of document.querySelectorAll('tbody tr'))r.hidden=!r.textContent.toLowerCase().includes(this.value.toLowerCase())">
 <div class="t"><table><thead><tr><th>Registration</th><th>Fleet</th><th>Status</th><th>Reason</th><th>${cols[0]}</th><th>${cols[1]}</th></tr></thead><tbody>${body}</tbody></table></div>
 <p class="m" style="margin-top:12px">Real-world flight data © adsb.lol contributors (ODbL). Updated every 5–15 minutes.</p>

@@ -44,7 +44,22 @@ export interface AogState {
   /** aircraftId -> last time the real aircraft was seen airborne (ISO). */
   lastAirborne: Record<string, string>;
   /** aircraftId -> AOG period. */
-  aog: Record<string, { since: string; lastFlown: string; wasHidden: boolean; applied: boolean; registration: string; fleetId: number }>;
+  aog: Record<
+    string,
+    {
+      since: string;
+      lastFlown: string;
+      wasHidden: boolean;
+      applied: boolean;
+      registration: string;
+      fleetId: number;
+      /** Declared by staff (e.g. parked/stored per planespotters). Only staff can lift it. */
+      manual?: boolean;
+      note?: string;
+      /** Set when the real aircraft is seen flying while manually parked (staff may want to unpark). */
+      seenFlyingAt?: string;
+    }
+  >;
   /** Aircraft actually seen airborne at least once (others only have the tracking-start time). */
   seen?: Record<string, 1>;
   /** Start of the current unbroken healthy-feed period. */
@@ -149,6 +164,11 @@ export async function pollAog(
       // Store with 1 h resolution to save KV writes.
       if (now.getTime() - new Date(state.lastAirborne[k]!).getTime() > 3600_000) state.lastAirborne[k] = now.toISOString();
       const held = state.aog[k];
+      if (held?.manual) {
+        // Staff-declared AOG is never lifted automatically; just flag it on the status page.
+        if (!held.seenFlyingAt) held.seenFlyingAt = now.toISOString();
+        continue;
+      }
       if (held) {
         const mx = (await opts.inMaintenance?.(a.id)) ?? false;
         if (held.applied && !opts.dryRun) {
@@ -188,6 +208,128 @@ export async function pollAog(
   if (JSON.stringify(b1) !== JSON.stringify(b2) || !raw || pollStale) await store.put(KEY, JSON.stringify(state));
   else state.lastPoll = prevPoll;
   return events;
+}
+
+export interface ParkResult {
+  parked: string[];
+  alreadyAog: string[];
+  notFound: string[];
+  /** Not done yet because of the per-request limit; call again with these. */
+  remaining: string[];
+}
+
+/** Cloudflare free plan: 50 outgoing requests per invocation; each park/unpark uses 2. */
+export const PARK_BATCH = 12;
+
+const normReg = (r: string) => {
+  const x = r.trim().toUpperCase();
+  return x.startsWith("PK-") ? x : x.startsWith("PK") ? `PK-${x.slice(2)}` : `PK-${x}`;
+};
+
+/** Staff: declare aircraft AOG immediately (e.g. parked/stored per planespotters). */
+export async function park(
+  api: VamsysPort,
+  store: Store,
+  cfg: AogConfig,
+  aircraft: TrackedAircraft[],
+  regs: string[],
+  opts: {
+    dryRun: boolean;
+    note?: string;
+    now?: Date;
+    inMaintenance?: (id: number) => Promise<boolean>;
+    /** Known original "hidden by staff" flags (e.g. to recover from an interrupted run). */
+    wasHiddenOverride?: Record<string, boolean>;
+    limit?: number;
+  },
+): Promise<ParkResult & { events: AogEvent[] }> {
+  const now = opts.now ?? new Date();
+  const state = await aogState(store);
+  const byReg = new Map(aircraft.map((a) => [a.registration.toUpperCase(), a]));
+  const res: ParkResult & { events: AogEvent[] } = { parked: [], alreadyAog: [], notFound: [], remaining: [], events: [] };
+  const limit = opts.limit ?? PARK_BATCH;
+  const override = Object.fromEntries(Object.entries(opts.wasHiddenOverride ?? {}).map(([k, v]) => [normReg(k), v]));
+  for (const reg of [...new Set(regs.map(normReg))]) {
+    if (res.parked.length >= limit) {
+      res.remaining.push(reg);
+      continue;
+    }
+    const a = byReg.get(reg);
+    if (!a || cfg.excludedFleetIds.includes(a.fleetId)) {
+      res.notFound.push(reg);
+      continue;
+    }
+    const k = String(a.id);
+    const existing = state.aog[k];
+    if (existing?.manual) {
+      res.alreadyAog.push(reg);
+      continue;
+    }
+    const line = `Parked/stored, declared AOG by staff${opts.note ? `: ${opts.note}` : ""} (since ${now.toISOString().slice(0, 10)})`;
+    const ac = await api.getAircraft(a.fleetId, a.id);
+    if (!opts.dryRun) {
+      await api.updateAircraft(a.fleetId, a.id, { hide_in_phoenix: true, internal_remarks: withTag(ac.internal_remarks, cfg.tag, line) });
+    }
+    const mxHolds = (await opts.inMaintenance?.(a.id)) ?? false;
+    state.aog[k] = {
+      since: existing?.since ?? now.toISOString(),
+      lastFlown: existing?.lastFlown ?? state.lastAirborne[k] ?? now.toISOString(),
+      // If ADS-B-AOG already hid it, keep its original "was hidden by staff" flag.
+      wasHidden: reg in override ? override[reg]! : existing ? existing.wasHidden : ac.hide_in_phoenix && !mxHolds,
+      applied: !opts.dryRun || Boolean(existing?.applied),
+      registration: a.registration,
+      fleetId: a.fleetId,
+      manual: true,
+      note: opts.note,
+    };
+    // Save after every aircraft, so an interrupted request never leaves hidden-but-unrecorded aircraft.
+    await store.put(KEY, JSON.stringify(state));
+    res.parked.push(reg);
+    res.events.push({ kind: "aog", aircraftId: a.id, registration: a.registration, lastFlown: state.aog[k]!.lastFlown, dryRun: opts.dryRun, at: now.toISOString() });
+  }
+  return res;
+}
+
+/** Staff: lift a staff-declared AOG (the aircraft is shown again unless maintenance or staff still hide it). */
+export async function unpark(
+  api: VamsysPort,
+  store: Store,
+  cfg: AogConfig,
+  aircraft: TrackedAircraft[],
+  regs: string[],
+  opts: { dryRun: boolean; now?: Date; inMaintenance?: (id: number) => Promise<boolean>; limit?: number },
+): Promise<{ released: string[]; notParked: string[]; remaining: string[]; events: AogEvent[] }> {
+  const now = opts.now ?? new Date();
+  const state = await aogState(store);
+  const byReg = new Map(aircraft.map((a) => [a.registration.toUpperCase(), a]));
+  const out = { released: [] as string[], notParked: [] as string[], remaining: [] as string[], events: [] as AogEvent[] };
+  for (const reg of [...new Set(regs.map(normReg))]) {
+    if (out.released.length >= (opts.limit ?? PARK_BATCH)) {
+      out.remaining.push(reg);
+      continue;
+    }
+    const a = byReg.get(reg);
+    const held = a && state.aog[String(a.id)];
+    if (!a || !held?.manual) {
+      out.notParked.push(reg);
+      continue;
+    }
+    const mx = (await opts.inMaintenance?.(a.id)) ?? false;
+    if (held.applied && !opts.dryRun) {
+      const ac = await api.getAircraft(a.fleetId, a.id);
+      await api.updateAircraft(a.fleetId, a.id, {
+        ...(held.wasHidden || mx ? {} : { hide_in_phoenix: false }),
+        internal_remarks: withTag(ac.internal_remarks, cfg.tag, null),
+      });
+    }
+    delete state.aog[String(a.id)];
+    // Fresh 3-day ADS-B grace period from now.
+    state.lastAirborne[String(a.id)] = now.toISOString();
+    await store.put(KEY, JSON.stringify(state));
+    out.released.push(reg);
+    out.events.push({ kind: "release", aircraftId: a.id, registration: a.registration, lastFlown: held.lastFlown, dryRun: opts.dryRun, at: now.toISOString() });
+  }
+  return out;
 }
 
 export async function aogState(store: Store): Promise<AogState> {
