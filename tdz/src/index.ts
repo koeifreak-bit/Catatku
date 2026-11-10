@@ -86,6 +86,7 @@ async function cycle(env: Env, forceAog = false) {
     const res = await park(client, env.TDZ_KV, AOG_CONFIG, list, [ac.registration], {
       dryRun: isAogDryRun(env),
       note: autoAogNote(hits.map((h) => h.label), p.callsign, p.id),
+      until: new Date(Date.now() + Math.max(...hits.map((h) => h.durationH)) * 3600_000),
       inMaintenance: (id) => inMaintenance(env.TDZ_KV, id),
     });
     incidentAog.push(...res.events);

@@ -141,3 +141,10 @@ Scored together with the TDZ (`src/cda.ts`), from the PIREP's vAMSYS position re
 - If position reports are missing or the lookup fails, the TDZ is still scored and CDA is simply left out.
 
 On 12 recent IJV flights, 6 qualified.
+
+### Auto AOG from scoring, and automatic release
+
+Tail strike, wing strike, liftoff pitch and overweight landing (vAMSYS scoring rules that deducted points) put the
+aircraft **AOG (incident)**. It is released automatically after the inspection time: tail strike 72 h, wing strike 72 h,
+liftoff pitch 48 h, overweight landing 24 h (longest wins; `src/auto-aog.ts`). Planespotters-parked aircraft are released
+automatically as soon as the real aircraft is seen flying again. Staff can still release early from the AOG page.

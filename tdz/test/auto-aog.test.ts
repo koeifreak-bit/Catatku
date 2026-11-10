@@ -3,7 +3,7 @@ import { autoAogNote, matchAutoAog } from "../src/auto-aog";
 
 it("matches IJV's live overweight rule and common strike wordings", () => {
   expect(matchAutoAog([{ name: "Landing weight is outside MLW tolerance", points: -25 }])).toEqual([
-    { label: "Overweight landing", rule: "Landing weight is outside MLW tolerance" },
+    { label: "Overweight landing", rule: "Landing weight is outside MLW tolerance", durationH: 24 },
   ]);
   for (const name of ["Tail Strike", "Tailstrike detected", "Tail-strike on landing"]) expect(matchAutoAog([{ name, points: -100 }])[0]!.label).toBe("Tail strike");
   for (const name of ["Wing Strike", "Wingstrike", "Wingtip strike", "Engine pod strike"]) expect(matchAutoAog([{ name, points: -100 }])[0]!.label).toBe("Wing strike");
@@ -23,7 +23,8 @@ it("ignores IJV's other scoring rules", () => {
 it("several hits on one flight are combined once each", () => {
   const m = matchAutoAog([{ name: "Tail strike", points: -100 }, { name: "Tailstrike (landing)", points: -50 }, { name: "Landing weight is outside MLW tolerance", points: -25 }]);
   expect(m.map((x) => x.label)).toEqual(["Tail strike", "Overweight landing"]);
-  expect(autoAogNote(m.map((x) => x.label), "CTV343", 4121320)).toBe("Auto AOG: Tail strike + Overweight landing on CTV343 (PIREP 4121320), staff inspection required");
+  expect(m.map((x) => x.durationH)).toEqual([72, 24]);
+  expect(autoAogNote(m.map((x) => x.label), "CTV343", 4121320)).toBe("Auto AOG: Tail strike + Overweight landing on CTV343 (PIREP 4121320), inspection");
 });
 
 it("IJV's actual Orwell scorer names (all scoring groups, 10 Nov 2026)", () => {

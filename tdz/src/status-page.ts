@@ -39,10 +39,10 @@ export function buildRows(aircraft: TrackedAircraft[], mx: Map<number, AircraftS
       if (g?.manual) {
         details.push(
           g.note?.startsWith(AUTO_AOG_NOTE_PREFIX)
-            ? `${g.note.slice(AUTO_AOG_NOTE_PREFIX.length).trim()} (since ${g.since.slice(0, 10)})`
+            ? `${g.note.slice(AUTO_AOG_NOTE_PREFIX.length).trim()} (since ${g.since.slice(0, 10)})${g.until ? `, auto-release ${fmt(g.until)}` : ""}`
             : `Declared AOG by staff since ${g.since.slice(0, 10)}${g.note ? `: ${g.note}` : ""}`,
         );
-        if (g.seenFlyingAt) details.push(`⚠ real aircraft seen flying ${fmt(g.seenFlyingAt)}, consider unparking`);
+
       } else if (g) details.push(`Real aircraft not flown since ${g.lastFlown.slice(0, 10)}`);
       return {
         id: ac.id,
@@ -69,7 +69,7 @@ export function renderPage(title: string, rows: Row[], meta: { live: boolean; la
   const action = (r: Row) => {
     if (focus === "aog") {
       if (r.status === "Parked (staff)") return `<button class="btn" data-act="unpark" data-reg="${esc(r.registration)}">Unpark</button>`;
-      if (r.status === "AOG (incident)") return `<button class="btn" data-act="unpark" data-reg="${esc(r.registration)}">Inspected, release</button>`;
+      if (r.status === "AOG (incident)") return `<button class="btn" data-act="unpark" data-reg="${esc(r.registration)}">Release now</button>`;
       if (r.status === "AOG" || r.status === "Maintenance + AOG") return `<small>lifts when the real aircraft flies</small>`;
       return `<button class="btn" data-act="park" data-reg="${esc(r.registration)}">Park (AOG)</button>`;
     }

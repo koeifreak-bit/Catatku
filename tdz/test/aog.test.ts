@@ -181,13 +181,35 @@ describe("staff park / unpark (e.g. parked per planespotters)", () => {
     expect(api.aircraft.get(50)!.hide_in_phoenix).toBe(true); // works without hex code
   });
 
-  it("a parked aircraft seen flying stays AOG (staff decide) but is flagged", async () => {
+  it("a parked aircraft is released automatically when the real aircraft flies again", async () => {
     await poll(T0);
     await P(["G1"]);
+    expect(await poll(d(0.4))).toEqual([]); // still not flying: stays parked
     feed.flying.add(fleet[0]!.hex);
-    expect(await poll(d(0.5))).toEqual([]);
+    expect(await poll(d(0.5))).toMatchObject([{ kind: "release", aircraftId: 1 }]);
+    expect(api.aircraft.get(1)).toMatchObject({ hide_in_phoenix: false, internal_remarks: null });
+  });
+
+  it("incident AOG is released by its timer, not by flying", async () => {
+    await poll(T0);
+    await import("../src/aog").then((m) =>
+      m.park(api as unknown as VamsysPort, store, cfg, list, ["G1"], { dryRun: false, now: T0, note: "Auto AOG: Tail strike on GIA1 (PIREP 1), inspection", until: d(3) }),
+    );
+    expect(api.aircraft.get(1)!.internal_remarks).toBe("[AOG-AUTO] Auto AOG: Tail strike on GIA1 (PIREP 1), inspection (since 2026-11-09, auto-release 2026-11-12 00:00Z)");
+    feed.flying.add(fleet[0]!.hex); // real aircraft flies, but the inspection isn't over
+    expect(await poll(d(1))).toEqual([]);
     expect(api.aircraft.get(1)!.hide_in_phoenix).toBe(true);
-    expect((await aogState(store)).aog["1"]!.seenFlyingAt).toBeDefined();
+    expect(await poll(d(3.01))).toMatchObject([{ kind: "release", aircraftId: 1 }]);
+    expect(api.aircraft.get(1)).toMatchObject({ hide_in_phoenix: false, internal_remarks: null });
+  });
+
+  it("incident timer also releases aircraft without a hex code", async () => {
+    await poll(T0);
+    await import("../src/aog").then((m) =>
+      m.park(api as unknown as VamsysPort, store, cfg, list, ["PWM"], { dryRun: false, now: T0, note: "Auto AOG: Overweight landing on PAS1 (PIREP 2), inspection", until: d(1) }),
+    );
+    expect(await poll(d(1.01))).toMatchObject([{ kind: "release", registration: "PK-PWM" }]);
+    expect(api.aircraft.get(50)!.hide_in_phoenix).toBe(false);
   });
 
   it("unpark shows it again and gives a fresh 3-day ADS-B grace", async () => {

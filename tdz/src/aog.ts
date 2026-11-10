@@ -58,6 +58,8 @@ export interface AogState {
       note?: string;
       /** Set when the real aircraft is seen flying while manually parked (staff may want to unpark). */
       seenFlyingAt?: string;
+      /** Incident AOG: released automatically at this time (ISO). */
+      until?: string;
     }
   >;
   /** Aircraft actually seen airborne at least once (others only have the tracking-start time). */
@@ -154,6 +156,23 @@ export async function pollAog(
 
   const feedOk = now.getTime() - new Date(state.feedHealthySince).getTime() >= cfg.feedHealthyForDays * DAY;
 
+  // Incident AOG (strike / overweight): release automatically when the inspection time is over.
+  for (const [k, held] of Object.entries(state.aog)) {
+    if (!held.until || new Date(held.until) > now) continue;
+    const id = Number(k);
+    const mx = (await opts.inMaintenance?.(id)) ?? false;
+    if (held.applied && !opts.dryRun) {
+      const ac = await api.getAircraft(held.fleetId, id);
+      await api.updateAircraft(held.fleetId, id, {
+        ...(held.wasHidden || mx ? {} : { hide_in_phoenix: false }),
+        internal_remarks: withTag(ac.internal_remarks, cfg.tag, null),
+      });
+    }
+    delete state.aog[k];
+    state.lastAirborne[k] = now.toISOString(); // fresh 3-day ADS-B grace
+    events.push({ kind: "release", aircraftId: id, registration: held.registration, lastFlown: held.lastFlown, dryRun: opts.dryRun, at: now.toISOString() });
+  }
+
   for (const a of tracked) {
     const k = String(a.id);
     // First time we track an aircraft: give it the full grace period.
@@ -164,11 +183,7 @@ export async function pollAog(
       // Store with 1 h resolution to save KV writes.
       if (now.getTime() - new Date(state.lastAirborne[k]!).getTime() > 3600_000) state.lastAirborne[k] = now.toISOString();
       const held = state.aog[k];
-      if (held?.manual) {
-        // Staff-declared AOG is never lifted automatically; just flag it on the status page.
-        if (!held.seenFlyingAt) held.seenFlyingAt = now.toISOString();
-        continue;
-      }
+      if (held?.until) continue; // incident AOG: released by its timer, not by flying
       if (held) {
         const mx = (await opts.inMaintenance?.(a.id)) ?? false;
         if (held.applied && !opts.dryRun) {
@@ -240,6 +255,8 @@ export async function park(
     inMaintenance?: (id: number) => Promise<boolean>;
     /** Known original "hidden by staff" flags (e.g. to recover from an interrupted run). */
     wasHiddenOverride?: Record<string, boolean>;
+    /** Incident AOG: release automatically at this time. Without it, a parked aircraft is released when it flies. */
+    until?: Date;
     limit?: number;
   },
 ): Promise<ParkResult & { events: AogEvent[] }> {
@@ -267,7 +284,7 @@ export async function park(
     }
     const since = now.toISOString().slice(0, 10);
     const line = opts.note?.startsWith("Auto AOG:")
-      ? `${opts.note} (since ${since})`
+      ? `${opts.note} (since ${since}${opts.until ? `, auto-release ${opts.until.toISOString().slice(0, 16).replace("T", " ")}Z` : ""})`
       : `Parked/stored, declared AOG by staff${opts.note ? `: ${opts.note}` : ""} (since ${since})`;
     const ac = await api.getAircraft(a.fleetId, a.id);
     if (!opts.dryRun) {
@@ -284,6 +301,7 @@ export async function park(
       fleetId: a.fleetId,
       manual: true,
       note: opts.note,
+      ...(opts.until ? { until: opts.until.toISOString() } : {}),
     };
     // Save after every aircraft, so an interrupted request never leaves hidden-but-unrecorded aircraft.
     await store.put(KEY, JSON.stringify(state));
