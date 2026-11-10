@@ -12,7 +12,7 @@ it("matches IJV's live overweight rule and common strike wordings", () => {
 
 it("ignores IJV's other scoring rules", () => {
   const normal = [
-    "Aircraft Shut Down and Secured", "Liftoff Pitch Attitude (Maximum 10 Degrees. Expect briefing with chief pilot)",
+    "Aircraft Shut Down and Secured",
     "Taxi Overspeed Detected", "Stabilized Approach", "Flaps Config 3 Landing (Airbus Green Operation Procedure)",
     "Single Engine Taxi in", "Non Compliance Of Engine Cool Down Time (3 Minute)",
   ].map((name) => ({ name, points: -10 }));
@@ -35,11 +35,12 @@ it("IJV's actual Orwell scorer names (all scoring groups, 10 Nov 2026)", () => {
     "Wing Strike Potential (Expect Debrief From Chief Pilot)": "Wing strike",
     "WIng Strike Potential (Expect Debrief From Chief Pilot)": "Wing strike",
     "Landing weight is outside MLW tolerance": "Overweight landing",
+    "Liftoff Pitch Attitude (Maximum 10 Degrees. Expect briefing with chief pilot)": "Liftoff pitch (tail strike risk)",
+    "Liftoff Pitch Attitude (Aircraft Geometry Limit ; Maximum 10 Degrees. Expect briefing with chief pilot)": "Liftoff pitch (tail strike risk)",
   };
   for (const [name, label] of Object.entries(aog)) expect(matchAutoAog([{ name, points: -50 }]).map((m) => m.label)).toEqual([label]);
   const notAog = [
     "Takeoff weight is outside MTOW tolerance",
-    "Liftoff Pitch Attitude (Maximum 10 Degrees. Expect briefing with chief pilot)",
     "Landing with fuel below final reserve",
     "Stabilized Approach Not Achieved (OM-A GA 11.5 0.7 Stabilized Approach)",
     "Landing Flap Not Set Violation Of Stabilized Approach",
@@ -50,4 +51,10 @@ it("IJV's actual Orwell scorer names (all scoring groups, 10 Nov 2026)", () => {
     "Airbus Landing Rate Zone ΔVRTA & RALR",
   ];
   for (const name of notAog) expect(matchAutoAog([{ name, points: -25 }])).toEqual([]);
+});
+
+it("only rules that actually deducted points trigger AOG", () => {
+  expect(matchAutoAog([{ name: "Tailstrike Potential (FCTM Aircraft Geometry Limits)", points: 0 }])).toEqual([]);
+  expect(matchAutoAog([{ name: "Wing Strike Potential", points: 10 }])).toEqual([]);
+  expect(matchAutoAog([{ name: "Wing Strike Potential", points: -50 }])).toHaveLength(1);
 });
