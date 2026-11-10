@@ -25,3 +25,29 @@ it("several hits on one flight are combined once each", () => {
   expect(m.map((x) => x.label)).toEqual(["Tail strike", "Overweight landing"]);
   expect(autoAogNote(m.map((x) => x.label), "CTV343", 4121320)).toBe("Auto AOG: Tail strike + Overweight landing on CTV343 (PIREP 4121320), staff inspection required");
 });
+
+it("IJV's actual Orwell scorer names (all scoring groups, 10 Nov 2026)", () => {
+  const aog = {
+    "Tailstrike Potential (B737-800 Aircraft Geometry Limits) (Expect Debrief From Chief Pilot)": "Tail strike",
+    "Tailstrike Potential (FCTM Aircraft Geometry Limits) (Expect Debrief From Chief Pilot)": "Tail strike",
+    "Tailstrike Potential (B777-300ER Aircraft Geometry Limits ; Maximum pitch angle 7,5) (Expect Debrief From Chief Pilot)": "Tail strike",
+    "Tailstrike Potential (A320-200 FCTM Aircraft Geometry Limit) (Expect Debrief From Chief Pilot)": "Tail strike",
+    "Wing Strike Potential (Expect Debrief From Chief Pilot)": "Wing strike",
+    "WIng Strike Potential (Expect Debrief From Chief Pilot)": "Wing strike",
+    "Landing weight is outside MLW tolerance": "Overweight landing",
+  };
+  for (const [name, label] of Object.entries(aog)) expect(matchAutoAog([{ name, points: -50 }]).map((m) => m.label)).toEqual([label]);
+  const notAog = [
+    "Takeoff weight is outside MTOW tolerance",
+    "Liftoff Pitch Attitude (Maximum 10 Degrees. Expect briefing with chief pilot)",
+    "Landing with fuel below final reserve",
+    "Stabilized Approach Not Achieved (OM-A GA 11.5 0.7 Stabilized Approach)",
+    "Landing Flap Not Set Violation Of Stabilized Approach",
+    "Non Compliance (B777 FCOM NP.21.25 | Flaps 1 T/O Prohibited)",
+    "After Start Flow Not Completed PRO-NOR-SOP-09-A-00019960.0001001",
+    "Single Engine Taxi Out Forbidden",
+    "Taxi Overspeed",
+    "Airbus Landing Rate Zone ΔVRTA & RALR",
+  ];
+  for (const name of notAog) expect(matchAutoAog([{ name, points: -25 }])).toEqual([]);
+});
