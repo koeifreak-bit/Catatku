@@ -265,7 +265,10 @@ export async function park(
       res.alreadyAog.push(reg);
       continue;
     }
-    const line = `Parked/stored, declared AOG by staff${opts.note ? `: ${opts.note}` : ""} (since ${now.toISOString().slice(0, 10)})`;
+    const since = now.toISOString().slice(0, 10);
+    const line = opts.note?.startsWith("Auto AOG:")
+      ? `${opts.note} (since ${since})`
+      : `Parked/stored, declared AOG by staff${opts.note ? `: ${opts.note}` : ""} (since ${since})`;
     const ac = await api.getAircraft(a.fleetId, a.id);
     if (!opts.dryRun) {
       await api.updateAircraft(a.fleetId, a.id, { hide_in_phoenix: true, internal_remarks: withTag(ac.internal_remarks, cfg.tag, line) });
