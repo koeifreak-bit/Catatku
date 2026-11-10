@@ -26,6 +26,8 @@ export interface Result {
   runway?: string | null;
   score?: Score;
   cda?: CdaResult | null;
+  /** vAMSYS scoring entries of the PIREP (pirep_data.scores), for the auto-AOG rules. */
+  scores?: { name: string; points: number }[];
   bonusEntries?: PointEntry[];
   rejected?: boolean;
   comment?: string;
@@ -94,6 +96,7 @@ export async function processPirep(
     const runway = td.runway;
 
     const detail = await api.getPirep(pirep.id);
+    const scores = Array.isArray(detail.pirep_data?.["scores"]) ? (detail.pirep_data!["scores"] as { name: string; points: number }[]) : [];
     const { others: entries, had } = existingBonusEntries(detail.pirep_data, [cfg.entryPrefix, CDA_CONFIG.entryPrefix]);
     // vAMSYS rejects an empty bonus list (422), so when a re-score has to replace our old entry
     // with a 0-point result we write a 0-point entry instead of removing it.
@@ -138,7 +141,7 @@ export async function processPirep(
       if (willReject) await api.reject(pirep.id);
     }
 
-    return finish({ ...base, outcome: "scored", runway, score, cda, bonusEntries: entries, rejected: willReject, comment });
+    return finish({ ...base, outcome: "scored", runway, score, cda, scores, bonusEntries: entries, rejected: willReject, comment });
   } catch (err) {
     return finish({ ...base, outcome: "error", reason: err instanceof Error ? err.message : String(err) });
   }
@@ -158,7 +161,7 @@ export async function runCycle(
   maxPerRun = 100,
   maxScan = 1000,
   /** Called once per new PIREP, when the poller moves past it (used by the maintenance module). */
-  onAdvance?: (p: PirepSummary) => Promise<void>,
+  onAdvance?: (p: PirepSummary, r: Result) => Promise<void>,
 ): Promise<Result[]> {
   const lastSeen = Number((await store.get("lastSeenId")) ?? 0);
 
@@ -208,7 +211,7 @@ export async function runCycle(
     if (r.reason === NO_TD) stillWaiting.push({ id: p.id, tries: 0 });
     if (onAdvance) {
       try {
-        await onAdvance(p);
+        await onAdvance(p, r);
       } catch (e) {
         console.log(JSON.stringify({ onAdvanceError: String(e), pirepId: p.id }));
       }

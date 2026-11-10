@@ -1,12 +1,13 @@
 /** Public fleet status pages: /maintenance and /aog (HTML; add ?format=json for JSON). */
 import type { AogConfig, AogState, TrackedAircraft } from "./aog";
 import type { AircraftState, MxConfig } from "./maintenance";
+import { AUTO_AOG_NOTE_PREFIX } from "./auto-aog";
 
 export interface Row {
   id: number;
   registration: string;
   fleet: string;
-  status: "Available" | "Maintenance" | "AOG" | "Parked (staff)" | "Maintenance + AOG";
+  status: "Available" | "Maintenance" | "AOG" | "AOG (incident)" | "Parked (staff)" | "Maintenance + AOG";
   detail: string;
   until?: string;
   nextCheck: string;
@@ -30,13 +31,17 @@ export function buildRows(aircraft: TrackedAircraft[], mx: Map<number, AircraftS
       const m = mx.get(ac.id);
       const g = aog.aog[String(ac.id)];
       const inMx = Boolean(m?.inMx);
-      const status: Row["status"] = inMx && g ? "Maintenance + AOG" : inMx ? "Maintenance" : g?.manual ? "Parked (staff)" : g ? "AOG" : "Available";
+      const status: Row["status"] = inMx && g ? "Maintenance + AOG" : inMx ? "Maintenance" : g?.manual ? (g.note?.startsWith(AUTO_AOG_NOTE_PREFIX) ? "AOG (incident)" : "Parked (staff)") : g ? "AOG" : "Available";
       const since = m?.since[a.name] ?? { hours: 0, cycles: 0 };
       const last = aog.lastAirborne[String(ac.id)];
       const details: string[] = [];
       if (inMx) details.push(m!.inMx!.reason);
       if (g?.manual) {
-        details.push(`Declared AOG by staff since ${g.since.slice(0, 10)}${g.note ? `: ${g.note}` : ""}`);
+        details.push(
+          g.note?.startsWith(AUTO_AOG_NOTE_PREFIX)
+            ? `${g.note.slice(AUTO_AOG_NOTE_PREFIX.length).trim()} (since ${g.since.slice(0, 10)})`
+            : `Declared AOG by staff since ${g.since.slice(0, 10)}${g.note ? `: ${g.note}` : ""}`,
+        );
         if (g.seenFlyingAt) details.push(`⚠ real aircraft seen flying ${fmt(g.seenFlyingAt)}, consider unparking`);
       } else if (g) details.push(`Real aircraft not flown since ${g.lastFlown.slice(0, 10)}`);
       return {
@@ -64,6 +69,7 @@ export function renderPage(title: string, rows: Row[], meta: { live: boolean; la
   const action = (r: Row) => {
     if (focus === "aog") {
       if (r.status === "Parked (staff)") return `<button class="btn" data-act="unpark" data-reg="${esc(r.registration)}">Unpark</button>`;
+      if (r.status === "AOG (incident)") return `<button class="btn" data-act="unpark" data-reg="${esc(r.registration)}">Inspected, release</button>`;
       if (r.status === "AOG" || r.status === "Maintenance + AOG") return `<small>lifts when the real aircraft flies</small>`;
       return `<button class="btn" data-act="park" data-reg="${esc(r.registration)}">Park (AOG)</button>`;
     }
@@ -71,7 +77,7 @@ export function renderPage(title: string, rows: Row[], meta: { live: boolean; la
       return `<button class="btn" data-act="release" data-id="${r.id}" data-reg="${esc(r.registration)}">End maintenance</button>`;
     return "";
   };
-  const badge = (s: Row["status"]) => `<span class="b ${s === "Available" ? "ok" : s === "AOG" || s === "Parked (staff)" ? "aog" : "mx"}">${esc(s)}</span>`;
+  const badge = (s: Row["status"]) => `<span class="b ${s === "Available" ? "ok" : s === "AOG" || s === "AOG (incident)" || s === "Parked (staff)" ? "aog" : "mx"}">${esc(s)}</span>`;
   const body = rows
     .map(
       (r) => `<tr><td><b>${esc(r.registration)}</b></td><td>${esc(r.fleet)}</td><td>${badge(r.status)}</td><td>${esc(r.detail || "")}${r.until ? `<br><small>until ${fmt(r.until)}</small>` : ""}</td><td>${esc(focus === "aog" ? r.realLastFlown : r.nextCheck)}</td><td>${esc(focus === "aog" ? r.nextCheck : r.realLastFlown)}</td><td>${action(r)}</td></tr>`,

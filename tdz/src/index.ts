@@ -5,6 +5,7 @@ import { inMaintenance, loadState, onPirep, releaseDue, type MxEvent } from "./m
 import { AOG_CONFIG, MX_CONFIG } from "./maintenance-config";
 import { buildRows, renderPage } from "./status-page";
 import { park, unpark } from "./aog";
+import { autoAogNote, matchAutoAog } from "./auto-aog";
 import { AdsbLol, aogState, loadTrackedAircraft, pollAog, type AogEvent, type TrackedAircraft } from "./aog";
 
 export interface Env {
@@ -24,6 +25,7 @@ export interface Env {
 const isDryRun = (env: Env) => env.DRY_RUN !== "false";
 const isMxDryRun = (env: Env) => env.MX_DRY_RUN !== "false";
 const isAogDryRun = (env: Env) => env.AOG_DRY_RUN !== "false";
+const SKIP_AUTO_AOG = new Set(["rejected", "invalidated", "invalid"]);
 
 const heldByAog = (env: Env) => async (id: number) => Boolean((await aogState(env.TDZ_KV)).aog[String(id)]);
 
@@ -69,10 +71,26 @@ async function cycle(env: Env, forceAog = false) {
   const mxOpts = { dryRun: isMxDryRun(env), heldElsewhere: heldByAog(env) };
   // Cloudflare free plan: 50 outgoing requests per run. A PIREP costs up to ~8 (TDZ + CDA + maintenance), so take at
   // most 4 per run; the rest are picked up 5 minutes later.
-  const results = await runCycle(client, env.TDZ_KV, DEFAULT_CONFIG, { dryRun: isDryRun(env) }, 4, 1000, async (p) => {
+  const incidentAog: AogEvent[] = [];
+  const results = await runCycle(client, env.TDZ_KV, DEFAULT_CONFIG, { dryRun: isDryRun(env) }, 4, 1000, async (p, r) => {
     const e = await onPirep(client, env.TDZ_KV, MX_CONFIG, p, mxOpts);
     if (e) mxEvents.push(e);
+    // Auto AOG when the airline's scoring rules flag a wing strike, tail strike or overweight landing.
+    if (SKIP_AUTO_AOG.has(p.status) || !p.aircraft_id) return;
+    const scores = r.scores ?? ((await client.getPirep(p.id)).pirep_data?.["scores"] as { name: string; points: number }[] | undefined);
+    const hits = matchAutoAog(scores);
+    if (!hits.length) return;
+    const list = await trackedAircraft(env, client, false);
+    const ac = list.find((a) => a.id === p.aircraft_id); // historic fleets aren't in the list → never auto-AOG
+    if (!ac) return;
+    const res = await park(client, env.TDZ_KV, AOG_CONFIG, list, [ac.registration], {
+      dryRun: isAogDryRun(env),
+      note: autoAogNote(hits.map((h) => h.label), p.callsign, p.id),
+      inMaintenance: (id) => inMaintenance(env.TDZ_KV, id),
+    });
+    incidentAog.push(...res.events);
   });
+  await rememberAog(env, incidentAog);
   try {
     mxEvents.push(...(await releaseDue(client, env.TDZ_KV, MX_CONFIG, mxOpts)));
   } catch (e) {
