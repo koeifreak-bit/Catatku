@@ -6,7 +6,7 @@ import { AOG_CONFIG, MX_CONFIG } from "./maintenance-config";
 import { buildRows, renderPage } from "./status-page";
 import { park, unpark } from "./aog";
 import { autoAogNote, matchAutoAog } from "./auto-aog";
-import { commandReply, postWebhook, verifyDiscord, type FleetEvent } from "./discord";
+import { COMMANDS, commandReply, postWebhook, verifyDiscord, type FleetEvent } from "./discord";
 import { AdsbLol, aogState, loadTrackedAircraft, pollAog, type AogEvent, type TrackedAircraft } from "./aog";
 
 export interface Env {
@@ -23,6 +23,7 @@ export interface Env {
   AOG_DRY_RUN?: string;
   /** Discord application public key (slash commands). */
   DISCORD_PUBLIC_KEY?: string;
+  DISCORD_APP_ID?: string;
   /** Discord channel webhook for grounded/released posts (secret). */
   DISCORD_WEBHOOK_URL?: string;
 }
@@ -284,6 +285,19 @@ export default {
 
     // POST /run: run one poll now
     if (req.method === "POST" && url.pathname === "/run") return json(await cycle(env, url.searchParams.get("aog") === "1"));
+
+    // POST /discord/register {botToken}: (re)register the slash commands. The token is used once, not stored.
+    if (req.method === "POST" && url.pathname === "/discord/register") {
+      const { botToken } = (await req.json()) as { botToken?: string };
+      if (!botToken || !env.DISCORD_APP_ID) return json({ error: "botToken and DISCORD_APP_ID required" }, 400);
+      const r = await fetch(`https://discord.com/api/v10/applications/${env.DISCORD_APP_ID}/commands`, {
+        method: "PUT",
+        headers: { Authorization: `Bot ${botToken.replace(/^Bot\s+/i, "").trim()}`, "Content-Type": "application/json" },
+        body: JSON.stringify(COMMANDS),
+      });
+      const out = (await r.json().catch(() => ({}))) as unknown;
+      return json({ status: r.status, commands: Array.isArray(out) ? out.map((c: { name: string }) => c.name) : out }, r.ok ? 200 : 502);
+    }
 
     // GET /aog/log: last 200 AOG events
     if (req.method === "GET" && url.pathname === "/aog/log") return json(JSON.parse((await env.TDZ_KV.get("aog:log")) ?? "[]"));
