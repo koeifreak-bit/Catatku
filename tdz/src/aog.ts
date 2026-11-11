@@ -71,6 +71,8 @@ export interface AogState {
 
 export interface AogEvent {
   kind: "aog" | "release";
+  /** Why (for notifications). */
+  reason?: string;
   aircraftId: number;
   registration: string;
   lastFlown: string;
@@ -306,7 +308,15 @@ export async function park(
     // Save after every aircraft, so an interrupted request never leaves hidden-but-unrecorded aircraft.
     await store.put(KEY, JSON.stringify(state));
     res.parked.push(reg);
-    res.events.push({ kind: "aog", aircraftId: a.id, registration: a.registration, lastFlown: state.aog[k]!.lastFlown, dryRun: opts.dryRun, at: now.toISOString() });
+    res.events.push({
+      kind: "aog",
+      aircraftId: a.id,
+      registration: a.registration,
+      lastFlown: state.aog[k]!.lastFlown,
+      reason: opts.note?.startsWith("Auto AOG:") ? opts.note.slice(9).trim() : `Parked${opts.note ? `: ${opts.note}` : " by staff"}`,
+      dryRun: opts.dryRun,
+      at: now.toISOString(),
+    });
   }
   return res;
 }

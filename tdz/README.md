@@ -148,3 +148,15 @@ Tail strike, wing strike, liftoff pitch and overweight landing (vAMSYS scoring r
 aircraft **AOG (incident)**. It is released automatically after the inspection time: tail strike 72 h, wing strike 72 h,
 liftoff pitch 48 h, overweight landing 24 h (longest wins; `src/auto-aog.ts`). Planespotters-parked aircraft are released
 automatically as soon as the real aircraft is seen flying again. Staff can still release early from the AOG page.
+
+## Discord bot
+
+Served by the same Worker (`src/discord.ts`), nothing else to host.
+
+- **Slash commands:** `/aog`, `/maintenance`, `/fleet`, `/aircraft registration:PK-GFF`. Discord sends them to
+  `https://vamsys-tdz.koeifreak.workers.dev/discord/interactions` (requests are verified with the app's public key).
+- **Channel posts** when aircraft go into or come out of maintenance / AOG (incl. incident AOG and parking), via a channel
+  webhook.
+
+Settings (Worker variables/secrets): `DISCORD_PUBLIC_KEY` (from the Discord app's General Information page) and
+`DISCORD_WEBHOOK_URL` (secret; channel → Integrations → Webhooks → Copy URL).
