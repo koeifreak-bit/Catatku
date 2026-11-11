@@ -299,6 +299,21 @@ export default {
       return json({ status: r.status, commands: Array.isArray(out) ? out.map((c: { name: string }) => c.name) : out }, r.ok ? 200 : 502);
     }
 
+    // POST /discord/test: post a test message to the channel webhook
+    if (req.method === "POST" && url.pathname === "/discord/test") {
+      if (!env.DISCORD_WEBHOOK_URL) return json({ error: "DISCORD_WEBHOOK_URL not set" }, 400);
+      const r = await fetch(env.DISCORD_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          username: "IJV Fleet Status",
+          embeds: [{ title: "✅ IJV Fleet Status connected", description: "Aircraft going into or out of maintenance / AOG will be posted here.\nTry `/aog`, `/maintenance`, `/fleet` or `/aircraft`.", color: 0x12b76a }],
+          allowed_mentions: { parse: [] },
+        }),
+      });
+      return json({ status: r.status }, r.ok ? 200 : 502);
+    }
+
     // GET /aog/log: last 200 AOG events
     if (req.method === "GET" && url.pathname === "/aog/log") return json(JSON.parse((await env.TDZ_KV.get("aog:log")) ?? "[]"));
 
