@@ -255,7 +255,7 @@ describe("runCycle", () => {
     expect(api.calls).toEqual([]);
   });
 
-  it("CDA: +50 entry next to the TDZ one, comment explains; a later re-score without CDA leaves a 0 entry", async () => {
+  it("CDA: +10 entry next to the TDZ one, comment explains; a later re-score without CDA leaves a 0 entry", async () => {
     api.pireps = [pirep(20)];
     api.touchdowns.set(20, [td(1150)]); // 351 m → +100
     const t = (s: number) => new Date(Date.UTC(2026, 10, 9) + s * 1000).toISOString();
@@ -264,7 +264,7 @@ describe("runCycle", () => {
     const r = await processPirep(api, store, api.pireps[0]!, cfg, live);
     expect(api.bonus.get(20)).toEqual([
       { name: "TDZ: Aiming point landing (351 m, RW25R)", points: 100 },
-      { name: "CDA: Continuous descent", points: 50 },
+      { name: "CDA: Continuous descent", points: 10 },
     ]);
     expect(r.comment).toContain("**Continuous descent:** no level-off");
 

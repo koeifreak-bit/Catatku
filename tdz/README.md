@@ -137,7 +137,7 @@ Scored together with the TDZ (`src/cda.ts`), from the PIREP's vAMSYS position re
   (field elevation = altitude right after touchdown, so high airports are fair).
 - **Broken by** any level segment (altitude within ±100 ft) lasting **more than 60 s**. Level flight below 2,000 ft AAL,
   e.g. to intercept the glideslope, doesn't count.
-- **+50** bonus entry `CDA: Continuous descent`, no penalty. The PIREP comment lists any level-offs found.
+- **+10** bonus entry `CDA: Continuous descent`, no penalty (was +50 until 18 Nov 2026; earlier PIREPs keep their +50). The PIREP comment lists any level-offs found.
 - If position reports are missing or the lookup fails, the TDZ is still scored and CDA is simply left out.
 
 On 12 recent IJV flights, 6 qualified.

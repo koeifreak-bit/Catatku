@@ -29,7 +29,7 @@ export const CDA_CONFIG: CdaConfig = {
   endAalFt: 2000, // TRISTAN, 9 Nov 2026: like real-world CDO, judge down to ~2,000 ft above the airport
   levelTolFt: 100,
   maxLevelSec: 60,
-  points: 50, // reward only, no penalty
+  points: 10, // reward only, no penalty (retuned from 50 on 18 Nov 2026; earlier PIREPs keep +50)
   label: "Continuous descent",
   entryPrefix: "CDA:",
 };
