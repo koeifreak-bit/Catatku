@@ -1,7 +1,7 @@
 import type { TdzConfig } from "./config";
 import { scoreTouchdown, type Score } from "./score";
 import { analyzeCda, CDA_CONFIG, describeCda, type CdaResult } from "./cda";
-import type { PirepSummary, PointEntry, VamsysPort } from "./vamsys";
+import type { PirepPilot, PirepSummary, PointEntry, VamsysPort } from "./vamsys";
 
 /** Subset of Workers KV we use (easy to fake in tests). */
 export interface Store {
@@ -28,6 +28,8 @@ export interface Result {
   cda?: CdaResult | null;
   /** vAMSYS scoring entries of the PIREP (pirep_data.scores), for the auto-AOG rules. */
   scores?: { name: string; points: number }[];
+  /** Who flew it (for the Discord posts). */
+  pilot?: PirepPilot | null;
   bonusEntries?: PointEntry[];
   rejected?: boolean;
   comment?: string;
@@ -141,7 +143,8 @@ export async function processPirep(
       if (willReject) await api.reject(pirep.id);
     }
 
-    return finish({ ...base, outcome: "scored", runway, score, cda, scores, bonusEntries: entries, rejected: willReject, comment });
+    const pilot = detail.pilot ? { id: detail.pilot.id, username: detail.pilot.username, name: detail.pilot.name, discord_id: detail.pilot.discord_id } : null;
+    return finish({ ...base, outcome: "scored", runway, score, cda, scores, pilot, bonusEntries: entries, rejected: willReject, comment });
   } catch (err) {
     return finish({ ...base, outcome: "error", reason: err instanceof Error ? err.message : String(err) });
   }

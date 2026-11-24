@@ -125,15 +125,40 @@ export function commandReply(name: string, options: { name: string; value: strin
 
 export interface FleetEvent {
   kind: "mx-start" | "mx-extend" | "mx-release" | "aog" | "aog-release";
+  /** Pilot whose flight caused the grounding (PIREP-triggered events only). */
+  pilot?: { username?: string | null; name?: string | null; discord_id?: string | null } | null;
+  callsign?: string | null;
+  pirepId?: number;
   registration?: string;
   reason?: string;
   until?: string;
   lastFlown?: string;
 }
 
+/** "IJV0312 Muhammad D. (@discord) · GIA162" — the @mention renders as a name but never pings (allowed_mentions is empty). */
+export function pilotLine(e: FleetEvent): string | null {
+  const p = e.pilot;
+  if (!p || (!p.username && !p.name)) return null;
+  const who = [p.username, p.name?.trim()].filter(Boolean).join(" ");
+  const tag = p.discord_id && /^\d{5,25}$/.test(p.discord_id) ? ` (<@${p.discord_id}>)` : "";
+  const flight = e.callsign ? ` · ${e.callsign}` : "";
+  return `**Pilot:** ${who}${tag}${flight}`;
+}
+
 /** One webhook message (max 10 embeds) for a batch of events. */
 export function eventsMessage(events: FleetEvent[]) {
-  const embeds = events.slice(0, 10).map((e) => {
+  const embeds = events.slice(0, 10).map((e) => withPilot(e, embedFor(e)));
+  if (events.length > 10) embeds[9] = { title: `… and ${events.length - 9} more`, description: `${PUBLIC_PAGE}/aog`, color: BLUE };
+  return { username: "IJV Fleet Status", embeds, allowed_mentions: { parse: [] as string[] } };
+}
+
+function withPilot(e: FleetEvent, embed: { title: string; description: string; color: number }) {
+  const line = pilotLine(e);
+  return line ? { ...embed, description: [embed.description, line].filter(Boolean).join("\n") } : embed;
+}
+
+function embedFor(e: FleetEvent): { title: string; description: string; color: number } {
+  {
     const reg = e.registration ?? "Aircraft";
     switch (e.kind) {
       case "mx-start":
@@ -147,9 +172,7 @@ export function eventsMessage(events: FleetEvent[]) {
       case "aog-release":
         return { title: `✅ ${reg} back in service`, description: "Released from AOG.", color: GREEN };
     }
-  });
-  if (events.length > 10) embeds[9] = { title: `… and ${events.length - 9} more`, description: `${PUBLIC_PAGE}/aog`, color: BLUE };
-  return { username: "IJV Fleet Status", embeds, allowed_mentions: { parse: [] as string[] } };
+  }
 }
 
 export async function postWebhook(url: string | undefined, events: FleetEvent[], fetchFn: typeof fetch = (i, init) => fetch(i, init)) {

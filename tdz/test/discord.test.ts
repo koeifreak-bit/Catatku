@@ -76,3 +76,26 @@ describe("channel posts", () => {
     await postWebhook(undefined, [{ kind: "aog-release" }], async () => { throw new Error("must not post"); });
   });
 });
+
+describe("pilot on grounding posts", () => {
+  const pilot = { username: "IJV0312", name: "Muhammad D.", discord_id: "985173883806158858" };
+  it("shows IJV number, name, a non-pinging Discord tag and the flight", () => {
+    const m = eventsMessage([
+      { kind: "aog", registration: "PK-GQD", reason: "Overweight landing on CTV343 (PIREP 4121320), inspection", pilot, callsign: "CTV343" },
+      { kind: "mx-start", registration: "PK-GLV", reason: "Hard landing inspection (-650 fpm / 1.3 g)", until: "2026-11-25T08:00:00Z", pilot: { username: "IJV0119", name: "Tapiwa M.", discord_id: null }, callsign: "CTV500" },
+    ]);
+    expect(m.embeds[0]!.description).toContain("**Pilot:** IJV0312 Muhammad D. (<@985173883806158858>) · CTV343");
+    expect(m.embeds[1]!.description).toContain("**Pilot:** IJV0119 Tapiwa M. · CTV500");
+    expect(m.allowed_mentions).toEqual({ parse: [] }); // tag is shown, nobody is pinged
+  });
+  it("no pilot line for releases, ADS-B AOG or missing data; bad discord ids are ignored", () => {
+    const m = eventsMessage([
+      { kind: "aog-release", registration: "PK-GFX" },
+      { kind: "aog", registration: "PK-GFH", lastFlown: "2026-11-01T00:00:00Z" },
+      { kind: "aog", registration: "PK-GQD", pilot: { username: "IJV1", name: "X", discord_id: "<@everyone>" } },
+    ]);
+    expect(m.embeds[0]!.description).not.toContain("Pilot");
+    expect(m.embeds[1]!.description).not.toContain("Pilot");
+    expect(m.embeds[2]!.description).toBe("**Pilot:** IJV1 X");
+  });
+});

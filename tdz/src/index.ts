@@ -76,12 +76,17 @@ async function notifyDiscord(env: Env, mx: MxEvent[], aog: AogEvent[]) {
     ...mx.filter((e) => !e.dryRun).map((e) => ({
       kind: e.kind === "start" ? ("mx-start" as const) : e.kind === "extend" ? ("mx-extend" as const) : ("mx-release" as const),
       registration: e.registration,
+      pilot: e.kind === "release" ? null : e.pilot,
+      callsign: e.callsign,
       reason: e.reason,
       until: e.until,
     })),
     ...aog.filter((e) => !e.dryRun).map((e) => ({
       kind: e.kind === "aog" ? ("aog" as const) : ("aog-release" as const),
       registration: e.registration,
+      // Only incident AOG has a pilot; ADS-B releases carry the real-world callsign, which is not a pilot.
+      pilot: e.kind === "aog" ? e.pilot : null,
+      callsign: e.kind === "aog" && e.pilot ? e.callsign : undefined,
       reason: e.reason,
       lastFlown: e.lastFlown,
     })),
@@ -117,11 +122,27 @@ async function cycle(env: Env, forceAog = false) {
   // most 4 per run; the rest are picked up 5 minutes later.
   const incidentAog: AogEvent[] = [];
   const results = await runCycle(client, env.TDZ_KV, DEFAULT_CONFIG, { dryRun: isDryRun(env) }, 4, 1000, async (p, r) => {
+    // PIREP detail (pilot + scores) is normally already loaded by the TDZ step; fetch it only if not.
+    let pilot = r.pilot;
+    let scores = r.scores;
+    const needDetail = async () => {
+      if (pilot !== undefined && scores !== undefined) return;
+      const d = await client.getPirep(p.id);
+      pilot ??= d.pilot ? { id: d.pilot.id, username: d.pilot.username, name: d.pilot.name, discord_id: d.pilot.discord_id } : null;
+      scores ??= d.pirep_data?.["scores"] as { name: string; points: number }[] | undefined;
+    };
     const e = await onPirep(client, env.TDZ_KV, MX_CONFIG, p, mxOpts);
-    if (e) mxEvents.push(e);
+    if (e) {
+      if (e.kind !== "release") {
+        await needDetail();
+        e.pilot = pilot;
+        e.callsign = p.callsign;
+      }
+      mxEvents.push(e);
+    }
     // Auto AOG when the airline's scoring rules flag a wing strike, tail strike or overweight landing.
     if (SKIP_AUTO_AOG.has(p.status) || !p.aircraft_id) return;
-    const scores = r.scores ?? ((await client.getPirep(p.id)).pirep_data?.["scores"] as { name: string; points: number }[] | undefined);
+    await needDetail();
     const hits = matchAutoAog(scores);
     if (!hits.length) return;
     const list = await trackedAircraft(env, client, false);
@@ -133,6 +154,10 @@ async function cycle(env: Env, forceAog = false) {
       until: new Date(Date.now() + Math.max(...hits.map((h) => h.durationH)) * 3600_000),
       inMaintenance: (id) => inMaintenance(env.TDZ_KV, id),
     });
+    for (const ev of res.events) {
+      ev.pilot = pilot;
+      ev.callsign = p.callsign ?? undefined;
+    }
     incidentAog.push(...res.events);
   });
   await rememberAog(env, incidentAog);

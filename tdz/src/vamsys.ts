@@ -18,6 +18,13 @@ export interface PirepSummary {
   landing_g?: number | null;
 }
 
+export interface PirepPilot {
+  id?: number;
+  username?: string | null;
+  name?: string | null;
+  discord_id?: string | null;
+}
+
 export interface Aircraft {
   id: number;
   fleet_id: number;
@@ -50,6 +57,7 @@ export interface PointEntry {
 
 export interface PirepDetail extends PirepSummary {
   pirep_data: Record<string, unknown> | null;
+  pilot?: PirepPilot | null;
 }
 
 export interface VamsysPort {

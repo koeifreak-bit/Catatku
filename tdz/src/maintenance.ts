@@ -64,6 +64,9 @@ export interface MxEvent {
   reason: string;
   until: string;
   pirepId?: number;
+  /** Set by the caller for PIREP-triggered starts (Discord posts). */
+  pilot?: { username?: string | null; name?: string | null; discord_id?: string | null } | null;
+  callsign?: string | null;
   dryRun: boolean;
   at: string;
 }

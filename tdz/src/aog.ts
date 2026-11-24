@@ -73,6 +73,8 @@ export interface AogEvent {
   kind: "aog" | "release";
   /** Why (for notifications). */
   reason?: string;
+  /** Pilot whose PIREP caused it (incident AOG), for the Discord posts. */
+  pilot?: { username?: string | null; name?: string | null; discord_id?: string | null } | null;
   aircraftId: number;
   registration: string;
   lastFlown: string;

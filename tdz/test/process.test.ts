@@ -23,7 +23,7 @@ class FakeApi implements VamsysPort {
   }
   async getPirep(id: number): Promise<PirepDetail> {
     const p = this.pireps.find((x) => x.id === id)!;
-    return { ...p, pirep_data: { bonus_scores: this.bonus.get(id) ?? [] } };
+    return { ...p, pirep_data: { bonus_scores: this.bonus.get(id) ?? [] }, pilot: { id: 7, username: "IJV0007", name: "Test P.", discord_id: "123456789012345678" } };
   }
   async getTouchdowns(id: number) { return this.touchdowns.get(id) ?? []; }
   async putBonusPoints(id: number, e: PointEntry[]) { this.calls.push(`bonus:${id}`); this.bonus.set(id, e); return e.reduce((s, x) => s + x.points, 0); }
@@ -283,5 +283,12 @@ describe("runCycle", () => {
     const r = await processPirep(api, store, api.pireps[0]!, cfg, live);
     expect(r).toMatchObject({ outcome: "scored", cda: null });
     expect(api.bonus.get(21)).toEqual([{ name: "TDZ: Aiming point landing (351 m, RW25R)", points: 100 }]);
+  });
+
+  it("result carries the pilot (for Discord posts)", async () => {
+    api.pireps = [pirep(30)];
+    api.touchdowns.set(30, [td(1150)]);
+    const r = await processPirep(api, store, api.pireps[0]!, cfg, live);
+    expect(r.pilot).toEqual({ id: 7, username: "IJV0007", name: "Test P.", discord_id: "123456789012345678" });
   });
 });
